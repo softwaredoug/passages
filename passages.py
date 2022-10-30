@@ -1,23 +1,39 @@
 from flask import Flask, request, jsonify
 from sentence_transformers import SentenceTransformer
 from time import perf_counter
+import pickle
+from copy import copy
+from threading import Lock
+
+
+
+from pathlib import Path
+Path(".cache").mkdir(parents=True, exist_ok=True)
 
 
 app = Flask(__name__)
 
 models = {}
-cache = {}
 
 
 class Model:
 
     def __init__(self, model_name):
-        self.cache = {}
-        self.model = SentenceTransformer(model_name)
         self.model_name = model_name
+
+        try:
+            with open(f".cache/{self.model_name}.pkl", "rb") as f:
+                self.cache = pickle.load(f)
+        except FileNotFoundError:
+            self.cache = {}
+        except EOFError:
+            self.cache = {}
+
+        self.model = SentenceTransformer(model_name)
         self.hits = 0
         self.misses = 0
         self.last_cached = False
+        self.cache_lock = Lock()
 
     def encode(self, passage):
         try:
@@ -29,7 +45,9 @@ class Model:
             self.last_cached = False
             self.misses += 1
             if len(passage) < 1000:
+                self.cache_lock.acquire()
                 self.cache[passage] = encoded
+                self.cache_lock.release()
         return encoded
 
     def stats(self):
@@ -40,6 +58,15 @@ class Model:
             "misses": self.misses
         }
 
+    def persist(self):
+
+        self.cache_lock.acquire()
+        cache = copy(self.cache)
+        self.cache_lock.release()
+
+        with open(f".cache/{self.model_name}.pkl", "wb") as f:
+            pickle.dump(cache, f)
+
 
 
 def get_stats():
@@ -49,12 +76,20 @@ def get_stats():
     return stats
 
 
+@app.route("/persist")
+def persist():
+    stats = {}
+    for _, model in models.items():
+        model.persist()
+    resp = {}
+    resp['stats'] = get_stats()
+    return jsonify(resp)
+
+
 @app.route("/stats")
 def stats():
     resp = {}
     resp['stats'] = get_stats()
-    if get_passage.num_requests % 100 == 0:
-        print(resp['stats'])
     return jsonify(resp)
 
 

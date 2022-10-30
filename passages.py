@@ -13,7 +13,7 @@ Path(".cache").mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
 
-models = {}
+
 
 
 class Model:
@@ -68,6 +68,8 @@ class Model:
             pickle.dump(cache, f)
 
 
+models = {'all-mpnet-base-v2': Model('all-mpnet-base-v2')}
+
 
 def get_stats():
     stats = {}
@@ -114,9 +116,9 @@ def get_passage(model_name):
 
     if stats:
         resp['stats'] = get_stats()
-    get_passage.num_requests += 1
 
     return jsonify(resp)
 
 
-get_passage.num_requests = 0
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5001, threaded=True)

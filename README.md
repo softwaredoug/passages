@@ -7,6 +7,10 @@ flask --app passages run --port 5001
 
 Get embeddings
 
+`http://localhost:5000/encode/<sentence-transformer-model-name>?q=<passage>`
+
+ie:
+
 ```
 http://localhost:5000/encode/all-MiniLM-L6-v2?q=hello+world
 ```

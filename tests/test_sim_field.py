@@ -4,8 +4,8 @@ from model import Model
 
 def test_corpus_quantized_matches_non_quantized():
     model = Model('all-mpnet-base-v2')
-    corpus_quantized = SimField(model, quantize=True)
-    corpus_float = SimField(model, quantize=False)
+    corpus_quantized = SimField(model, quantize=True, cached=False)
+    corpus_float = SimField(model, quantize=False, cached=False)
 
     corpus_quantized.index(passages={('doc1', 1): 'Mary had a little lamb.',
                                      ('doc1', 2): 'Tom owns a cat.',
@@ -15,8 +15,8 @@ def test_corpus_quantized_matches_non_quantized():
                                  ('doc1', 2): 'Tom owns a cat.',
                                  ('doc1', 3): 'Wow I love bananas!'})
 
-    top_n_q = corpus_quantized.search('What does Mary have?')
-    top_n_f = corpus_float.search('What does Mary have?')
+    top_n_q = corpus_quantized.search('What does Mary have?').reset_index()
+    top_n_f = corpus_float.search('What does Mary have?').reset_index()
 
     assert top_n_q['doc_id'].to_list() == top_n_f['doc_id'].to_list()
     assert top_n_q['passage_id'].to_list() == top_n_f['passage_id'].to_list()
@@ -24,7 +24,7 @@ def test_corpus_quantized_matches_non_quantized():
 
 def test_corpus_update():
     model = Model('all-mpnet-base-v2')
-    corpus = SimField(model)
+    corpus = SimField(model, cached=False)
 
     corpus.index(passages={('doc1', 1): 'Mary had a little lamb.',
                            ('doc1', 2): 'Tom owns a cat.',
@@ -38,7 +38,7 @@ def test_corpus_update():
 
 def test_corpus_upsert():
     model = Model('all-mpnet-base-v2')
-    corpus = SimField(model)
+    corpus = SimField(model, cached=False)
 
     corpus.index(passages={('doc1', 1): 'Mary had a little lamb.',
                            ('doc1', 2): 'Tom owns a cat.',
@@ -53,7 +53,7 @@ def test_corpus_upsert():
 
 def test_corpus_ignore_updates_mode():
     model = Model('all-mpnet-base-v2')
-    corpus = SimField(model)
+    corpus = SimField(model, cached=False)
 
     corpus.index(passages={('doc1', 1): 'Mary had a little lamb.',
                            ('doc1', 2): 'Tom owns a cat.',

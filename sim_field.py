@@ -39,71 +39,75 @@ def remove_also_in(new, other):
     return new
 
 
+def new_passages():
+    passages = pd.DataFrame(columns=['doc_id', 'passage_id',
+                                     'passage'])
+    passages = passages.set_index(['doc_id', 'passage_id'])
+    return passages
+
+
 class SimField:
     """A field corresponding to vector data for passages, alongside metadata"""
 
     def __init__(self, model: Model,
-                 sim_field_name: Optional[str] = None,
-                 quantize=True):
+                 field_name: Optional[str] = None,
+                 quantize=True, cached=True):
 
         self.model = model
         self.hits = 0
         self.misses = 0
         self.quantize = quantize
         self.last_cached = False
-        if sim_field_name is None:
-            sim_field_name = self.model.model_name + "_sim_field"
-        self.sim_field_name = sim_field_name
-        self.sim_field_lock = Lock()
+        if field_name is None:
+            field_name = self.model.model_name + "_sim_field"
+        self.field_name = field_name
+        self.passages_lock = Lock()
 
         try:
-            self.sim_field = pd.read_pickle(f".cache/{self.sim_field_name}.pkl")
-        except FileNotFoundError:
-            self.sim_field = pd.DataFrame(columns=['doc_id', 'passage_id',
-                                                   'passage'])
-            self.sim_field = self.sim_field.set_index(['doc_id', 'passage_id'])
-        except EOFError:
-            self.sim_field = pd.DataFrame(columns=['doc_id', 'passage_id',
-                                                   'passage'])
-            self.sim_field = self.sim_field.set_index(['doc_id', 'passage_id'])
+            if cached:
+                self.passages = pd.read_pickle(f".cache/{self.field_name}.pkl")
+            else:
+                self.passages = new_passages()
+        except IOError:
+            self.passages = new_passages()
 
     def index(self, passages: Mapping[id_type, str], skip_updates=False):
-        as_sim_field = pd.DataFrame(passages.items(),
+        new_passages = pd.DataFrame(passages.items(),
                                     columns=['id', 'passage'])
-        as_sim_field[['doc_id', 'passage_id']] =\
-            pd.DataFrame(as_sim_field['id'].tolist(),
+        new_passages[['doc_id', 'passage_id']] =\
+            pd.DataFrame(new_passages['id'].tolist(),
                          columns=['doc_id', 'passage_id'])
-        as_sim_field = as_sim_field[['doc_id', 'passage_id', 'passage']]
-        as_sim_field = as_sim_field.set_index(['doc_id', 'passage_id'])
+        new_passages = new_passages[['doc_id', 'passage_id', 'passage']]
+        new_passages = new_passages.set_index(['doc_id', 'passage_id'])
 
         if skip_updates:
-            as_sim_field = remove_also_in(as_sim_field, self.sim_field)
+            new_passages = remove_also_in(new_passages, self.passages)
 
-        as_sim_field['passage'] =\
-            as_sim_field['passage'].apply(self._quantized_encoder)
+        new_passages['passage'] =\
+            new_passages['passage'].apply(self._quantized_encoder)
 
-        self.sim_field_lock.acquire()
-        self.sim_field = upsert(self.sim_field, as_sim_field)
-        self.sim_field_lock.release()
+        self.passages_lock.acquire()
+        self.passages = upsert(self.passages, new_passages)
+        self.passages_lock.release()
 
     def stats(self) -> dict:
         return {
-            "cache_size": len(self.sim_field),
+            "cache_size": len(self.passages),
             "is_cached": self.last_cached,
             "hits": self.hits,
             "misses": self.misses
         }
 
     def persist(self):
-        self.sim_field_lock.acquire()
-        cache = self.sim_field.copy()
-        self.sim_field_lock.release()
-        with open(f".cache/{self.sim_field_name}.pkl", "wb") as f:
+        self.passages_lock.acquire()
+        cache = self.passages.copy()
+        self.passages_lock.release()
+        with open(f".cache/{self.field_name}.pkl", "wb") as f:
             pickle.dump(cache, f)
 
     def search(self, query: str) -> pd.DataFrame:
         return similarity(query, self._quantized_encoder,
-                          self.sim_field, 'passage')
+                          self.passages, 'passage')
 
     def _quantized_encoder(self, text):
         if self.quantize:

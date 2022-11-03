@@ -1,6 +1,7 @@
 from typing import Dict
 from flask import Flask, request, jsonify
 from sim_field import SimField
+from model import Model
 
 
 app = Flask(__name__)
@@ -35,12 +36,12 @@ def index(model_name):
     args = request.args
     field_name = model_name + "_field"
     if field_name not in fields:
-        fields[field_name] = SimField(field_name)
+        fields[field_name] = SimField(Model(model_name))
     field = fields[field_name]
     passage = args.get('q')
     passage_id = args.get('passage_id')
     doc_id = args.get('doc_id')
-    field.index({(doc_id, passage_id): passage})
+    field.index({(doc_id, passage_id): passage}, skip_updates=True)
 
     return "Created", 201
 
@@ -49,11 +50,15 @@ def index(model_name):
 def search(model_name):
     args = request.args
     field_name = model_name + "_field"
+    if field_name not in fields:
+        fields[field_name] = SimField(Model(model_name))
     field = fields[field_name]
     query = args.get('q')
     results = []
-    for row in field.search(query).to_dict(orient='records'):
-        results.append(row)
+    top_n = field.search(query)
+    for row in top_n.iterrows():
+        results.append({'doc_id': row[0][0],
+                        'passage_id': int(row[0][1])})
     return jsonify(results)
 
 

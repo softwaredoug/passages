@@ -1,5 +1,8 @@
 from sim_field import SimField
 from model import Model
+import random
+from time import perf_counter
+import numpy as np
 
 
 def test_corpus_quantized_matches_non_quantized():
@@ -49,6 +52,73 @@ def test_corpus_upsert():
 
     top_n = corpus.search('What does Mary have?')
     assert len(top_n) == 4
+
+
+class DummyModel:
+
+    def __init__(self, model_name):
+        self.model_name = model_name
+
+    def encode(self, text):
+        return np.random.random(768)
+
+
+def test_corpus_upsert_perf_dominated_by_encoding():
+    model = DummyModel('dummy')
+    corpus = SimField(model, cached=False)
+
+    start = perf_counter()
+    for idx in range(0, 100):
+
+        d = random.randint(0, 10000)
+        p = random.randint(0, 10000)
+
+        corpus.index(passages={(f"doc{d}", p): 'Mary had a little lamb.',
+                               (f"doc{d}", p): 'Tom owns a cat.',
+                               (f"doc{d}", p): 'Wow I love bananas!'})
+
+        corpus.index(passages={(f"doc{d}", p): 'Mary had a little ham.',
+                               (f"doc{d}", p): 'And I love apples'})
+
+    dummy_time = perf_counter() - start
+
+    start = perf_counter()
+    model = Model('all-mpnet-base-v2')
+    corpus = SimField(model, cached=False)
+
+    start = perf_counter()
+    for idx in range(0, 100):
+
+        d = random.randint(0, 10000)
+        p = random.randint(0, 10000)
+
+        corpus.index(passages={(f"doc{d}", p): 'Mary had a little lamb.',
+                               (f"doc{d}", p): 'Tom owns a cat.',
+                               (f"doc{d}", p): 'Wow I love bananas!'})
+
+        corpus.index(passages={(f"doc{d}", p): 'Mary had a little ham.',
+                               (f"doc{d}", p): 'And I love apples'})
+
+    actual_encoder_time = perf_counter() - start
+
+    assert actual_encoder_time > (8 * dummy_time)
+
+
+def test_encode_in_loop_slower_than_encode_batch():
+
+    sentences = ["bar baz foo %d" % random.randint(0, 10000)
+                 for i in range(0, 100)]
+    start = perf_counter()
+    model = Model('all-mpnet-base-v2')
+    model.encode(sentences)
+    batch_time = perf_counter() - start
+
+    start = perf_counter()
+    for sentence in sentences:
+        model.encode(sentence)
+    iter_time = perf_counter() - start
+    print(batch_time, iter_time)
+    assert batch_time < 3 * iter_time
 
 
 def test_corpus_ignore_updates_mode():

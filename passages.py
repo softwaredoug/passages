@@ -1,88 +1,23 @@
+from typing import Dict
 from flask import Flask, request, jsonify
-from sentence_transformers import SentenceTransformer
-from time import perf_counter
-import pickle
-from copy import copy
-from threading import Lock
-
-
-
-from pathlib import Path
-Path(".cache").mkdir(parents=True, exist_ok=True)
+from sim_field import SimField
 
 
 app = Flask(__name__)
-
-
-
-
-class Model:
-
-    def __init__(self, model_name):
-        self.model_name = model_name
-
-        try:
-            with open(f".cache/{self.model_name}.pkl", "rb") as f:
-                self.cache = pickle.load(f)
-        except FileNotFoundError:
-            self.cache = {}
-        except EOFError:
-            self.cache = {}
-
-        self.model = SentenceTransformer(model_name)
-        self.hits = 0
-        self.misses = 0
-        self.last_cached = False
-        self.cache_lock = Lock()
-
-    def encode(self, passage):
-        try:
-            encoded = self.cache[passage]
-            self.hits += 1
-            self.last_cached = True
-        except KeyError:
-            encoded = self.model.encode(passage).tolist()
-            self.last_cached = False
-            self.misses += 1
-            if len(passage) < 1000:
-                self.cache_lock.acquire()
-                self.cache[passage] = encoded
-                self.cache_lock.release()
-        return encoded
-
-    def stats(self):
-        return {
-            "cache_size": len(self.cache),
-            "is_cached": self.last_cached,
-            "hits": self.hits,
-            "misses": self.misses
-        }
-
-    def persist(self):
-
-        self.cache_lock.acquire()
-        cache = copy(self.cache)
-        self.cache_lock.release()
-
-        with open(f".cache/{self.model_name}.pkl", "wb") as f:
-            pickle.dump(cache, f)
-
-
-models = {'all-mpnet-base-v2': Model('all-mpnet-base-v2')}
+fields: Dict[str, SimField] = {}
 
 
 def get_stats():
     stats = {}
-    for model_name, model in models.items():
+    for model_name, model in fields.items():
         stats[model_name] = model.stats()
     return stats
 
 
 @app.route("/persist")
 def persist():
-    stats = {}
-    for _, model in models.items():
-        model.persist()
+    for _, field in fields.items():
+        field.persist()
     resp = {}
     resp['stats'] = get_stats()
     return jsonify(resp)
@@ -95,29 +30,31 @@ def stats():
     return jsonify(resp)
 
 
-@app.route("/encode/<model_name>")
-def get_passage(model_name):
-    start = perf_counter()
+@app.route("/index/<model_name>")
+def index(model_name):
     args = request.args
-    if model_name not in models:
-        models[model_name] = Model(model_name)
-    model = models[model_name]
+    field_name = model_name + "_field"
+    if field_name not in fields:
+        fields[field_name] = SimField(field_name)
+    field = fields[field_name]
     passage = args.get('q')
-    stats = args.get('stats')
-    encoded = model.encode(passage)
+    passage_id = args.get('passage_id')
+    doc_id = args.get('doc_id')
+    field.index({(doc_id, passage_id): passage})
+
+    return "Created", 201
 
 
-    resp = {
-        "q": passage,
-        "model": model_name,
-        "encoded": encoded,
-        "encode_time": perf_counter() - start
-    }
-
-    if stats:
-        resp['stats'] = get_stats()
-
-    return jsonify(resp)
+@app.route("/search/<model_name>")
+def search(model_name):
+    args = request.args
+    field_name = model_name + "_field"
+    field = fields[field_name]
+    query = args.get('q')
+    results = []
+    for row in field.search(query).to_dict(orient='records'):
+        results.append(row)
+    return jsonify(results)
 
 
 if __name__ == "__main__":

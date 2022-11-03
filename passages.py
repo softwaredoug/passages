@@ -2,6 +2,7 @@ from typing import Dict
 from flask import Flask, request, jsonify
 from sim_field import SimField
 from model import Model
+import json
 
 
 app = Flask(__name__)
@@ -31,17 +32,26 @@ def stats():
     return jsonify(resp)
 
 
-@app.route("/index/<model_name>")
+@app.route("/index/<model_name>", methods=["POST"])
 def index(model_name):
-    args = request.args
     field_name = model_name + "_field"
     if field_name not in fields:
         fields[field_name] = SimField(Model(model_name))
     field = fields[field_name]
-    passage = args.get('q')
-    passage_id = args.get('passage_id')
-    doc_id = args.get('doc_id')
-    field.index({(doc_id, passage_id): passage}, skip_updates=True)
+
+    lines = request.get_data().decode('utf-8').split('\n')
+    to_index = {}
+    for line in lines[:-1]:
+        try:
+            passage_obj = json.loads(line)
+            doc_id = passage_obj['doc_id']
+            passage_id = passage_obj['passage_id']
+            passage = passage_obj['passage']
+            to_index[(doc_id, passage_id)] = passage
+        except Exception as e:
+            print(e)
+
+    field.index(to_index, skip_updates=True)
 
     return "Created", 201
 
@@ -63,4 +73,4 @@ def search(model_name):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, threaded=True)
+    app.run(host="0.0.0.0", port=5001, threaded=False)

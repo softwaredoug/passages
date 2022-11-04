@@ -47,7 +47,8 @@ def uint8_nearest_neighbors(query_vector: np.ndarray,
 
 def similarity(query: str, encoder: Callable[[str], np.ndarray],
                corpus: pd.DataFrame, column: str, n=10):
-    query_vector = encoder(query)[0]
+
+    query_vector = encoder(query)
     vectors = np.array(cast(np.ndarray, corpus[column].tolist()))
 
     if query_vector.dtype == np.uint8:

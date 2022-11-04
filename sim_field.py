@@ -1,10 +1,11 @@
-from typing import Optional, Mapping, Tuple
+from typing import Optional, Mapping, Tuple, Union
 from similarity import similarity, quantize
-from model import Model
+from model import Model, CacheModel
 from threading import Lock
 import pandas as pd
 import numpy as np
 import pickle
+from time import perf_counter
 from pathlib import Path
 Path(".cache").mkdir(parents=True, exist_ok=True)
 
@@ -47,14 +48,32 @@ def new_passages():
     return passages
 
 
+def load_encode_cache():
+    try:
+        print("Loading cache...")
+        start = perf_counter()
+        with open('.cache/all-mpnet-base-v2.pkl', 'rb') as f:
+            cache = pickle.load(f)
+        print(f"Done - {perf_counter() - start}!")
+    except IOError:
+        print("No cache available")
+        cache = {}
+    return cache
+
+
 class SimField:
     """A field corresponding to vector data for passages, alongside metadata"""
 
-    def __init__(self, model: Model,
+    def __init__(self, model: Union[Model, CacheModel],
                  field_name: Optional[str] = None,
                  quantize=True, cached=True):
 
         self.model = model
+
+        if cached:
+            self.encode_cache = load_encode_cache()
+            if len(self.encode_cache) > 0:
+                self.model = CacheModel(model, self.encode_cache)
         self.hits = 0
         self.misses = 0
         self.quantize = quantize

@@ -1,5 +1,5 @@
 from sim_field import SimField
-from model import Model
+from model import Model, CacheModel
 import random
 from time import perf_counter
 import numpy as np
@@ -155,3 +155,23 @@ def test_corpus_ignore_updates_mode():
 
     top_n = corpus.search('What does Mary have?')
     assert len(top_n) == 3
+
+
+def test_cache_encoder_same_when_no_cache():
+    model = Model('all-mpnet-base-v2')
+    cache_model = CacheModel(model, cache={})
+
+    assert (model.encode("foo") == cache_model.encode("foo")).all()
+    assert (model.encode(["foo"]) == cache_model.encode(["foo"])).all()
+    sentences = ["The cat ate a berry.", "The berry was yummy.",
+                 "It fell from a tree.", "The tree was decidous."]
+    np.testing.assert_allclose(model.encode(sentences),
+                               cache_model.encode(sentences),
+                               rtol=0.01, atol=0.01)
+
+
+def test_cache_encoder_uses_cache():
+    model = Model('all-mpnet-base-v2')
+    cache_model = CacheModel(model, cache={"foo": [1234, 5678]})
+    assert (cache_model.encode("foo") == np.array([1234, 5678])).all()
+    assert (cache_model.encode(["foo"]) == np.array([[1234, 5678]])).all()

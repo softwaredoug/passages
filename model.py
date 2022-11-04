@@ -1,21 +1,9 @@
 from sentence_transformers import SentenceTransformer
 from typing import Iterator, Union
 import numpy as np
-import pickle
-from time import perf_counter
-
-try:
-    print("Loading cache...")
-    start = perf_counter()
-    with open('.coache/all-mpnet-base-v2.pkl', 'rb') as f:
-        cache = pickle.load(f)
-    print(f"Done - {perf_counter() - start}!")
-except IOError:
-    print("No cache available")
-    cache = {}
 
 
-def cache_encode(passages, encoder):
+def cache_encode(passages, encoder, cache):
     if isinstance(passages, str):
         passages = [passages]
     encoded = []
@@ -34,6 +22,20 @@ class Model:
         self.model = SentenceTransformer(model_name)
 
     def encode(self, passages: Union[str, Iterator[str]]):
-        # encoded = cache_encode(passages, self.model.encode)
         encoded = self.model.encode(passages)
         return encoded
+
+
+class CacheModel:
+
+    def __init__(self, model, cache):
+        self.model = model
+        self.cache = cache
+
+    def encode(self, passages: Union[str, Iterator[str]]):
+        encoded = cache_encode(passages, self.model.encode, self.cache)
+        return encoded
+
+    @property
+    def model_name(self):
+        return self.model.model_name

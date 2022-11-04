@@ -125,6 +125,8 @@ class SimField:
     def persist(self):
         self.passages_lock.acquire()
         cache = self.passages.copy()
+        if r:
+            r.save()
         self.passages_lock.release()
         with open(f".cache/{self.field_name}.pkl", "wb") as f:
             pickle.dump(cache, f)

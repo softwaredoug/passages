@@ -3,14 +3,14 @@ from typing import Iterator, Union
 import numpy as np
 
 
-def cache_encode(passages, encoder, cache_encode):
+def cache_encode(passages, encoder, cache_encoder):
     single_vect = False
     if isinstance(passages, str):
         single_vect = True
         passages = [passages]
     encoded = []
     for passage in passages:
-        cached = cache_encode(passage)
+        cached = cache_encoder(passage)
         if cached is not None:
             encoded.append(cached)
         else:

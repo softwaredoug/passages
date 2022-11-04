@@ -7,7 +7,7 @@ from time import perf_counter
 try:
     print("Loading cache...")
     start = perf_counter()
-    with open('.cache/all-mpnet-base-v2.pkl', 'rb') as f:
+    with open('.coache/all-mpnet-base-v2.pkl', 'rb') as f:
         cache = pickle.load(f)
     print(f"Done - {perf_counter() - start}!")
 except IOError:

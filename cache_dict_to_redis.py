@@ -16,6 +16,7 @@ def load_encode_cache():
         cache = {}
     return cache
 
+
 def save_to_redis(r, cache):
     idx = 0
     print(f"Saving {len(cache)}")
@@ -23,7 +24,7 @@ def save_to_redis(r, cache):
         r.set(passage, json.dumps(vector))
         if (idx % 10000 == 0):
             print(f"Saved {idx}")
-        idx +=1
+        idx += 1
 
 
 if __name__ == "__main__":

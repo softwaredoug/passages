@@ -3,24 +3,24 @@ from typing import Iterator, Union
 import numpy as np
 
 
-def cache_encode(passages, encoder, cache_encoder):
+def cache_encode(passages, encoder, cache_get, cache_set):
     single_vect = False
     if isinstance(passages, str):
         single_vect = True
         passages = [passages]
     encoded = []
     for passage in passages:
-        cached = cache_encoder(passage)
+        cached = cache_get(passage)
         if cached is not None:
             encoded.append(cached)
         else:
-            encoded.append(encoder(passage))
+            encoded = encoder(passage)
+            cache_set(passage, encoded)
     arr = np.array(encoded)
     if single_vect:
         return arr[0]
     else:
         return arr
-
 
 
 class Model:
@@ -36,12 +36,14 @@ class Model:
 
 class CacheModel:
 
-    def __init__(self, model, read_from_cache):
+    def __init__(self, model, cache_get, cache_set):
         self.model = model
-        self.cache_encode = read_from_cache
+        self.cache_get = cache_get
+        self.cache_set = cache_set
 
     def encode(self, passages: Union[str, Iterator[str]]):
-        encoded = cache_encode(passages, self.model.encode, self.cache_encode)
+        encoded = cache_encode(passages, self.model.encode,
+                               self.cache_get, self.cache_set)
         return encoded
 
     @property

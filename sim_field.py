@@ -5,7 +5,6 @@ from threading import Lock
 import pandas as pd
 import numpy as np
 import pickle
-from time import perf_counter
 from pathlib import Path
 Path(".cache").mkdir(parents=True, exist_ok=True)
 
@@ -58,12 +57,17 @@ try:
 except ImportError:
     r = None
 
+
 def get_from_redis(passage: str):
     vector = r.get(passage)
     if vector is not None:
         return np.array(json.loads(r.get(passage)))
     else:
         return None
+
+
+def save_to_redis(passage, arr):
+    r.set(passage, json.dumps(arr.tolist()))
 
 
 class SimField:
@@ -76,7 +80,7 @@ class SimField:
         self.model = model
 
         if r is not None:
-            self.model = CacheModel(model, get_from_redis)
+            self.model = CacheModel(model, get_from_redis, save_to_redis)
         self.hits = 0
         self.misses = 0
         self.quantize = quantize

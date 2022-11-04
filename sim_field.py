@@ -48,17 +48,19 @@ def new_passages():
     return passages
 
 
-def load_encode_cache():
-    try:
-        print("Loading cache...")
-        start = perf_counter()
-        with open('.cache/all-mpnet-base-v2.pkl', 'rb') as f:
-            cache = pickle.load(f)
-        print(f"Done - {perf_counter() - start}!")
-    except IOError:
-        print("No cache available")
-        cache = {}
-    return cache
+try:
+    import redis
+    import json
+    r = redis.Redis(host='localhost', port=6379)
+except ImportError:
+    r = None
+
+def get_from_redis(passage: str):
+    vector = r.get(passage)
+    if vector is not None:
+        return np.array(json.loads(r.get(passage)))
+    else:
+        return None
 
 
 class SimField:
@@ -70,10 +72,8 @@ class SimField:
 
         self.model = model
 
-        if cached:
-            self.encode_cache = load_encode_cache()
-            if len(self.encode_cache) > 0:
-                self.model = CacheModel(model, self.encode_cache)
+        if r is not None:
+            self.model = CacheModel(model, get_from_redis)
         self.hits = 0
         self.misses = 0
         self.quantize = quantize

@@ -4,7 +4,9 @@ import numpy as np
 
 
 def cache_encode(passages, encoder, cache_encode):
+    single_vect = False
     if isinstance(passages, str):
+        single_vect = True
         passages = [passages]
     encoded = []
     for passage in passages:
@@ -13,7 +15,12 @@ def cache_encode(passages, encoder, cache_encode):
             encoded.append(cached)
         else:
             encoded.append(encoder(passage))
-    return np.array(encoded)
+    arr = np.array(encoded)
+    if single_vect:
+        return arr[0]
+    else:
+        return arr
+
 
 
 class Model:

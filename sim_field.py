@@ -27,6 +27,9 @@ def upsert(original, upserts):
                 (merged['_merge'] == 'both'))
     merged.loc[upserted, 'passage'] = merged[upserted]['passage_y']
     merged = merged[['passage']]
+    # We should have a single vector or something went very wrong
+    assert len(merged['passage'].iloc[-1].shape) == 1
+    assert len(merged['passage'].iloc[0].shape) == 1
     return merged
 
 

@@ -3,6 +3,7 @@ from similarity import similarity, quantize
 from model import Model
 from threading import Lock
 import pandas as pd
+import numpy as np
 import pickle
 from pathlib import Path
 Path(".cache").mkdir(parents=True, exist_ok=True)
@@ -83,8 +84,9 @@ class SimField:
         if skip_updates:
             new_passages = remove_also_in(new_passages, self.passages)
 
-        new_passages['passage'] =\
-            new_passages['passage'].apply(self._quantized_encoder)
+        encoded = self._quantized_encoder(new_passages['passage'])
+        new_passages['passage'] = encoded.tolist()
+        new_passages['passage'] = new_passages['passage'].apply(self._as_uint8)
 
         self.passages_lock.acquire()
         self.passages = upsert(self.passages, new_passages)
@@ -114,3 +116,6 @@ class SimField:
             return quantize(self.model.encode(text))
         else:
             return self.model.encode(text)
+
+    def _as_uint8(self, int_list):
+        return np.array(int_list, dtype=np.uint8)

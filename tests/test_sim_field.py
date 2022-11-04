@@ -54,13 +54,34 @@ def test_corpus_upsert():
     assert len(top_n) == 4
 
 
-class DummyModel:
+class BatchCheckingModel:
 
     def __init__(self, model_name):
         self.model_name = model_name
 
     def encode(self, text):
-        return np.random.random(768)
+        assert not isinstance(text, str)
+        return np.random.random((len(text), 768))
+
+
+def test_corpus_encodes_as_batch():
+    model = BatchCheckingModel('dummy')
+    corpus = SimField(model, cached=False)
+    corpus.index(passages={("doc1", 1): 'Mary had a little lamb.',
+                           ("doc1", 2): 'Tom owns a cat.',
+                           ("doc1", 3): 'Wow I love bananas!'})
+
+
+class DummyModel:
+
+    def __init__(self, model_name):
+        self.model_name = model_name
+
+    def encode(self, texts):
+        if isinstance(texts, str):
+            return np.random.random(1, 768)
+        else:
+            return np.random.random((len(texts), 768))
 
 
 def test_corpus_upsert_perf_dominated_by_encoding():

@@ -14,8 +14,9 @@ def cache_encode(passages, encoder, cache_get, cache_set):
         if cached is not None:
             encoded.append(cached)
         else:
-            encoded = encoder(passage)
-            cache_set(passage, encoded)
+            enc_passage = encoder(passage)
+            encoded.append(enc_passage)
+            cache_set(passage, enc_passage)
     arr = np.array(encoded)
     if single_vect:
         return arr[0]

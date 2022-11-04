@@ -32,11 +32,16 @@ def stats():
     return jsonify(resp)
 
 
+# Available models
+def load_fields():
+    for model_name in ['all-mpnet-base-v2']:
+        field_name = model_name + "_field"
+        fields[field_name] = SimField(Model(model_name))
+
+
 @app.route("/index/<model_name>", methods=["POST"])
 def index(model_name):
     field_name = model_name + "_field"
-    if field_name not in fields:
-        fields[field_name] = SimField(Model(model_name))
     field = fields[field_name]
 
     lines = request.get_data().decode('utf-8').split('\n')
@@ -60,8 +65,6 @@ def index(model_name):
 def search(model_name):
     args = request.args
     field_name = model_name + "_field"
-    if field_name not in fields:
-        fields[field_name] = SimField(Model(model_name))
     field = fields[field_name]
     query = args.get('q')
     results = []
@@ -73,4 +76,5 @@ def search(model_name):
 
 
 if __name__ == "__main__":
+    load_fields()
     app.run(host="0.0.0.0", port=5001, threaded=True)

@@ -34,5 +34,6 @@ class Model:
         self.model = SentenceTransformer(model_name)
 
     def encode(self, passages: Union[str, Iterator[str]]):
-        cache_encoded = cache_encode(passages, self.model.encode)
-        return cache_encoded
+        # encoded = cache_encode(passages, self.model.encode)
+        encoded = self.model.encode(passages)
+        return encoded

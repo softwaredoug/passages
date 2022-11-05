@@ -1,7 +1,8 @@
-import redis
-import json
 import pickle
+import redis
+import numpy as np
 from time import perf_counter
+from vector_cache import VectorCache
 
 
 def load_encode_cache():
@@ -17,11 +18,11 @@ def load_encode_cache():
     return cache
 
 
-def save_to_redis(r, cache):
+def save_to_redis(vector_cache, cache):
     idx = 0
     print(f"Saving {len(cache)}")
     for passage, vector in cache.items():
-        r.set(passage, json.dumps(vector))
+        vector_cache.set(passage, np.array(vector))
         if (idx % 10000 == 0):
             print(f"Saved {idx}")
         idx += 1
@@ -30,4 +31,4 @@ def save_to_redis(r, cache):
 if __name__ == "__main__":
     r = redis.Redis(host='localhost', port=6379)
     cache = load_encode_cache()
-    save_to_redis(r, cache)
+    save_to_redis(VectorCache(r), cache)

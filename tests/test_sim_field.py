@@ -199,6 +199,7 @@ def test_cache_encoder_same_when_no_cache(empty_redis_mock):
 def test_cache_encoder_uses_cache(filled_redis_mock):
     model = Model('all-mpnet-base-v2')
     cache_model = CacheModel(model, VectorCache(filled_redis_mock,
-                                                dtype=np.int64))
+                                                dtype=np.int64,
+                                                dims=2))
     assert (cache_model.encode("foo") == np.array([1234, 5678])).all()
     assert (cache_model.encode(["foo"]) == np.array([[1234, 5678]])).all()

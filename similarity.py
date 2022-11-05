@@ -8,11 +8,16 @@ def quantize(arr, bits=256):
     floor = -1.0
     ceil = 1.0
     arr[arr == 1.0] = ceil - 0.00001
-    assert not (arr > ceil).any()
-    assert not (arr < floor).any()
-    flt_per_bucket = (abs(floor) + abs(ceil)) / bits
-    quantized = (arr - floor) // flt_per_bucket
-    assert not (arr >= bits).any()
+    try:
+        assert not (arr > ceil).any()
+        assert not (arr < floor).any()
+        flt_per_bucket = (abs(floor) + abs(ceil)) / bits
+        quantized = (arr - floor) // flt_per_bucket
+        assert not (arr >= bits).any()
+    except AssertionError as e:
+        raise e
+    except ValueError as e:
+        raise e
     return quantized.astype(np.uint8)
 
 

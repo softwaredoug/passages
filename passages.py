@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify
 from sim_field import SimField
 from model import Model
 import json
+from redis import Redis
 
 
 app = Flask(__name__)
@@ -34,9 +35,10 @@ def stats():
 
 # Available models
 def load_fields():
+    r = Redis('localhost', 6379)
     for model_name in ['all-mpnet-base-v2']:
         field_name = model_name + "_field"
-        fields[field_name] = SimField(Model(model_name))
+        fields[field_name] = SimField(Model(model_name), r=r)
 
 
 @app.route("/index/<model_name>", methods=["POST"])

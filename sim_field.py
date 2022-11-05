@@ -62,7 +62,7 @@ class SimField:
         self.model = model
 
         if cached and r is not None:
-            vector_cache = VectorCache(r, dtype=np.float32)
+            vector_cache = VectorCache(r, dtype=np.float32, dims=768)
             self.model = CacheModel(model, vector_cache)
         self.hits = 0
         self.misses = 0
@@ -93,7 +93,11 @@ class SimField:
         if skip_updates:
             new_passages = remove_also_in(new_passages, self.passages)
 
-        encoded = self._quantized_encoder(new_passages['passage'])
+        try:
+            encoded = self._quantized_encoder(new_passages['passage'])
+        except ValueError as e:
+            import pdb; pdb.set_trace()
+            raise e
         new_passages['passage'] = encoded.tolist()
         new_passages['passage'] = new_passages['passage'].apply(self._as_uint8)
 

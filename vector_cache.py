@@ -4,14 +4,18 @@ from typing import Union, Optional
 
 class VectorCache:
 
-    def __init__(self, r, dtype=np.float64):
+    def __init__(self, r, dtype=np.float64, dims=768):
         self.r = r
         self.dtype = dtype
+        self.dims = dims
 
     def set(self, key: str, arr: np.ndarray):
         """Store given Numpy array 'a' in Redis under key 'n'"""
         if len(arr.shape) > 1:
             raise ValueError("Only supports vectors")
+
+        if arr.shape[0] != self.dims:
+            raise ValueError(f"Only supports {self.dims} dimensions")
 
         if arr.dtype != self.dtype:
             msg = (f"Only type {self.dtype} supported" +
@@ -28,7 +32,9 @@ class VectorCache:
         if encoded is None:
             return None
         a = np.frombuffer(encoded, dtype=self.dtype)
-        return a
+        if a.shape[0] == self.dims:
+            return a
+        return None
 
 
 class NullVectorCache:

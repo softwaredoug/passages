@@ -91,6 +91,11 @@ class SimField:
         new_passages = new_passages.set_index(['doc_id', 'passage_id'])
 
         if skip_updates:
+            shared_indices = (
+                new_passages.index.intersection(self.passages.index)
+            )
+            if len(shared_indices) == len(new_passages):
+                return
             new_passages = remove_also_in(new_passages, self.passages)
 
         encoded = self._quantized_encoder(new_passages['passage'])

@@ -86,6 +86,43 @@ class DummyModel:
             return np.random.random((len(texts), 768))
 
 
+def test_skipping_updates_faster_than_new_entries():
+    model = Model('all-mpnet-base-v2')
+    corpus = SimField(model, cached=False)
+
+    start = perf_counter()
+    for idx in range(0, 100):
+
+        d = 1
+        p = 1
+
+        corpus.index(passages={(f"doc{d}", p): 'Mary had a little lamb.',
+                               (f"doc{d}", p): 'Tom owns a cat.',
+                               (f"doc{d}", p): 'Wow I love bananas!'},
+                     skip_updates=True)
+
+    skip_time = perf_counter() - start
+
+    model = Model('all-mpnet-base-v2')
+    corpus = SimField(model, cached=False)
+
+    start = perf_counter()
+    for idx in range(0, 100):
+
+        d = random.randint(0, 10000)
+        p = random.randint(0, 10000)
+
+        corpus.index(passages={(f"doc{d}", p): 'Mary had a little lamb.',
+                               (f"doc{d}", p): 'Tom owns a cat.',
+                               (f"doc{d}", p): 'Wow I love bananas!'})
+
+        corpus.index(passages={(f"doc{d}", p): 'Mary had a little ham.',
+                               (f"doc{d}", p): 'And I love apples'})
+
+    with_updates_time = perf_counter() - start
+    assert with_updates_time > (8 * skip_time)
+
+
 @pytest.mark.skip(reason="Used just for benchmarking")
 def test_corpus_upsert_perf_dominated_by_encoding():
     model = DummyModel('dummy')

@@ -93,11 +93,7 @@ class SimField:
         if skip_updates:
             new_passages = remove_also_in(new_passages, self.passages)
 
-        try:
-            encoded = self._quantized_encoder(new_passages['passage'])
-        except ValueError as e:
-            import pdb; pdb.set_trace()
-            raise e
+        encoded = self._quantized_encoder(new_passages['passage'])
         new_passages['passage'] = encoded.tolist()
         new_passages['passage'] = new_passages['passage'].apply(self._as_uint8)
 

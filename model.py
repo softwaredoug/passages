@@ -37,14 +37,14 @@ class Model:
 
 class CacheModel:
 
-    def __init__(self, model, cache_get, cache_set):
+    def __init__(self, model, vector_cache):
         self.model = model
-        self.cache_get = cache_get
-        self.cache_set = cache_set
+        self.vector_cache = vector_cache
 
     def encode(self, passages: Union[str, Iterator[str]]):
         encoded = cache_encode(passages, self.model.encode,
-                               self.cache_get, self.cache_set)
+                               self.vector_cache.get,
+                               self.vector_cache.set)
         return encoded
 
     @property

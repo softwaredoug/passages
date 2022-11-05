@@ -1,11 +1,13 @@
 from typing import Optional, Mapping, Tuple, Union
-from similarity import similarity, quantize
-from model import Model, CacheModel
 from threading import Lock
 import pandas as pd
 import numpy as np
 import pickle
 from pathlib import Path
+from similarity import similarity, quantize
+from model import Model, CacheModel
+from vector_cache import VectorCache
+
 Path(".cache").mkdir(parents=True, exist_ok=True)
 
 
@@ -50,37 +52,18 @@ def new_passages():
     return passages
 
 
-try:
-    import redis
-    import json
-    r = redis.Redis(host='localhost', port=6379)
-except ImportError:
-    r = None
-
-
-def get_from_redis(passage: str):
-    vector = r.get(passage)
-    if vector is not None:
-        return np.array(json.loads(r.get(passage)))
-    else:
-        return None
-
-
-def save_to_redis(passage, arr):
-    r.set(passage, json.dumps(arr.tolist()))
-
-
 class SimField:
     """A field corresponding to vector data for passages, alongside metadata"""
 
     def __init__(self, model: Union[Model, CacheModel],
                  field_name: Optional[str] = None,
-                 quantize=True, cached=True):
+                 quantize=True, cached=True, r=None):
 
         self.model = model
 
-        if r is not None:
-            self.model = CacheModel(model, get_from_redis, save_to_redis)
+        if cached and r is not None:
+            vector_cache = VectorCache(r, dtype=np.float32)
+            self.model = CacheModel(model, vector_cache)
         self.hits = 0
         self.misses = 0
         self.quantize = quantize

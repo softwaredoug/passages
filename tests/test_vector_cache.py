@@ -12,7 +12,7 @@ class RedisMock:
         self.cache[key] = value
 
     def get(self, key):
-        return self.cache[key]
+        return self.cache.get(key)
 
 
 @pytest.fixture
@@ -39,3 +39,9 @@ def test_raises_on_wrong_type(redis_mock):
     vector_cache = VectorCache(redis_mock, dtype=np.int64)
     with pytest.raises(ValueError):
         vector_cache.set("foo", arr)
+
+
+def test_none_on_no_vector(redis_mock):
+    vector_cache = VectorCache(redis_mock, dtype=np.int64)
+    foo = vector_cache.get("foo")
+    assert foo is None

@@ -3,6 +3,8 @@ from model import Model, CacheModel
 import random
 from time import perf_counter
 import numpy as np
+import pytest
+from vector_cache import VectorCache
 
 
 def test_corpus_quantized_matches_non_quantized():
@@ -84,6 +86,7 @@ class DummyModel:
             return np.random.random((len(texts), 768))
 
 
+@pytest.mark.skip(reason="Used just for benchmarking")
 def test_corpus_upsert_perf_dominated_by_encoding():
     model = DummyModel('dummy')
     corpus = SimField(model, cached=False)
@@ -157,9 +160,32 @@ def test_corpus_ignore_updates_mode():
     assert len(top_n) == 3
 
 
-def test_cache_encoder_same_when_no_cache():
+class RedisMock:
+
+    def __init__(self, cache={}):
+        self.cache = cache
+
+    def set(self, key, value):
+        self.cache[key] = value
+
+    def get(self, key):
+        return self.cache.get(key)
+
+
+@pytest.fixture
+def empty_redis_mock():
+    return RedisMock()
+
+
+@pytest.fixture
+def filled_redis_mock():
+    return RedisMock(cache={"foo": np.array([1234, 5678])})
+
+
+def test_cache_encoder_same_when_no_cache(empty_redis_mock):
     model = Model('all-mpnet-base-v2')
-    cache_model = CacheModel(model, cache={})
+    cache_model = CacheModel(model, VectorCache(empty_redis_mock,
+                                                dtype=np.float32))
 
     assert (model.encode("foo") == cache_model.encode("foo")).all()
     assert (model.encode(["foo"]) == cache_model.encode(["foo"])).all()
@@ -170,8 +196,9 @@ def test_cache_encoder_same_when_no_cache():
                                rtol=0.01, atol=0.01)
 
 
-def test_cache_encoder_uses_cache():
+def test_cache_encoder_uses_cache(filled_redis_mock):
     model = Model('all-mpnet-base-v2')
-    cache_model = CacheModel(model, cache={"foo": [1234, 5678]})
+    cache_model = CacheModel(model, VectorCache(filled_redis_mock,
+                                                dtype=np.int64))
     assert (cache_model.encode("foo") == np.array([1234, 5678])).all()
     assert (cache_model.encode(["foo"]) == np.array([[1234, 5678]])).all()

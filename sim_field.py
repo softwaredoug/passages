@@ -14,18 +14,7 @@ Path(".cache").mkdir(parents=True, exist_ok=True)
 id_type = Tuple[str, int]
 
 
-def remove_also_in(new, other):
-    new = new.merge(other,
-                    left_index=True,
-                    right_index=True,
-                    how='outer',
-                    indicator=True)
-    new = new[new['_merge'] == 'left_only']
-    new = new.rename(columns={'passage_x': 'passage'})[['passage']]
-    return new
-
-
-def new_passages():
+def _new_passages() -> pd.DataFrame:
     passages = pd.DataFrame(columns=['doc_id', 'passage_id',
                                      'passage'])
     passages = passages.set_index(['doc_id', 'passage_id'])
@@ -57,9 +46,9 @@ class SimField:
             if cached:
                 self.passages = pd.read_pickle(f".cache/{self.field_name}.pkl")
             else:
-                self.passages = new_passages()
+                self.passages = _new_passages()
         except IOError:
-            self.passages = new_passages()
+            self.passages = _new_passages()
 
     def index(self, passages: Mapping[id_type, str], skip_updates=False):
         new_passages = pd.DataFrame(passages.items(),
@@ -77,20 +66,19 @@ class SimField:
         if skip_updates:
             if len(shared_indices) == len(new_passages):
                 return
-            new_passages = remove_also_in(new_passages, self.passages)
 
         encoded = self._quantized_encoder(new_passages['passage'])
         new_passages['passage'] = encoded.tolist()
         new_passages['passage'] = new_passages['passage'].apply(self._as_uint8)
 
         self.passages_lock.acquire()
-        self.passages.loc[shared_indices,
-                          'passage'] = new_passages.loc[shared_indices]
+        if not skip_updates:
+            self.passages.loc[shared_indices,
+                              'passage'] = new_passages.loc[shared_indices]
 
         to_concat = new_passages.loc[
             new_passages.index.difference(shared_indices)
         ]
-        # self.passages = upsert(self.passages, new_passages)
         self.passages = pd.concat([self.passages, to_concat])
         self.passages_lock.release()
 

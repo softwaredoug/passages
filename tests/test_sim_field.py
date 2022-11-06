@@ -123,16 +123,17 @@ def test_skipping_updates_faster_than_new_entries():
     assert with_updates_time > (8 * skip_time)
 
 
-@pytest.mark.skip(reason="Used just for benchmarking")
 def test_corpus_upsert_perf_dominated_by_encoding():
     model = DummyModel('dummy')
     corpus = SimField(model, cached=False)
 
+    random.seed(1234)
+
     start = perf_counter()
     for idx in range(0, 100):
 
-        d = random.randint(0, 10000)
-        p = random.randint(0, 10000)
+        d = idx // 10
+        p = idx // 10
 
         corpus.index(passages={(f"doc{d}", p): 'Mary had a little lamb.',
                                (f"doc{d}", p): 'Tom owns a cat.',
@@ -150,8 +151,8 @@ def test_corpus_upsert_perf_dominated_by_encoding():
     start = perf_counter()
     for idx in range(0, 100):
 
-        d = random.randint(0, 10000)
-        p = random.randint(0, 10000)
+        d = idx // 10
+        p = idx // 10
 
         corpus.index(passages={(f"doc{d}", p): 'Mary had a little lamb.',
                                (f"doc{d}", p): 'Tom owns a cat.',
@@ -161,6 +162,7 @@ def test_corpus_upsert_perf_dominated_by_encoding():
                                (f"doc{d}", p): 'And I love apples'})
 
     actual_encoder_time = perf_counter() - start
+    print(dummy_time, actual_encoder_time)
 
     assert actual_encoder_time > (8 * dummy_time)
 

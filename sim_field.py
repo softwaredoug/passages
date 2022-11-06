@@ -14,26 +14,6 @@ Path(".cache").mkdir(parents=True, exist_ok=True)
 id_type = Tuple[str, int]
 
 
-def upsert(original, upserts):
-    merged = original.merge(upserts,
-                            left_index=True,
-                            right_index=True,
-                            how='outer',
-                            indicator=True)
-    merged = merged.rename(columns={'passage_x': 'passage'})
-    # Drop 'both'
-    # Keep passage_y for right only and both,
-    # Keep passage_x for left only ,
-    upserted = ((merged['_merge'] == 'right_only') |
-                (merged['_merge'] == 'both'))
-    merged.loc[upserted, 'passage'] = merged[upserted]['passage_y']
-    merged = merged[['passage']]
-    # We should have a single vector or something went very wrong
-    assert len(merged['passage'].iloc[-1].shape) == 1
-    assert len(merged['passage'].iloc[0].shape) == 1
-    return merged
-
-
 def remove_also_in(new, other):
     new = new.merge(other,
                     left_index=True,
@@ -90,10 +70,11 @@ class SimField:
         new_passages = new_passages[['doc_id', 'passage_id', 'passage']]
         new_passages = new_passages.set_index(['doc_id', 'passage_id'])
 
+        shared_indices = (
+            new_passages.index.intersection(self.passages.index)
+        )
+
         if skip_updates:
-            shared_indices = (
-                new_passages.index.intersection(self.passages.index)
-            )
             if len(shared_indices) == len(new_passages):
                 return
             new_passages = remove_also_in(new_passages, self.passages)
@@ -103,7 +84,14 @@ class SimField:
         new_passages['passage'] = new_passages['passage'].apply(self._as_uint8)
 
         self.passages_lock.acquire()
-        self.passages = upsert(self.passages, new_passages)
+        self.passages.loc[shared_indices,
+                          'passage'] = new_passages.loc[shared_indices]
+
+        to_concat = new_passages.loc[
+            new_passages.index.difference(shared_indices)
+        ]
+        # self.passages = upsert(self.passages, new_passages)
+        self.passages = pd.concat([self.passages, to_concat])
         self.passages_lock.release()
 
     def stats(self) -> dict:

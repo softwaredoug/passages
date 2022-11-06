@@ -12,13 +12,13 @@ def test_corpus_quantized_matches_non_quantized():
     corpus_quantized = SimField(model, quantize=True, cached=False)
     corpus_float = SimField(model, quantize=False, cached=False)
 
-    corpus_quantized.index(passages={('doc1', 1): 'Mary had a little lamb.',
-                                     ('doc1', 2): 'Tom owns a cat.',
-                                     ('doc1', 3): 'Wow I love bananas!'})
+    corpus_quantized.upsert(passages={('doc1', 1): 'Mary had a little lamb.',
+                                      ('doc1', 2): 'Tom owns a cat.',
+                                      ('doc1', 3): 'Wow I love bananas!'})
 
-    corpus_float.index(passages={('doc1', 1): 'Mary had a little lamb.',
-                                 ('doc1', 2): 'Tom owns a cat.',
-                                 ('doc1', 3): 'Wow I love bananas!'})
+    corpus_float.upsert(passages={('doc1', 1): 'Mary had a little lamb.',
+                                  ('doc1', 2): 'Tom owns a cat.',
+                                  ('doc1', 3): 'Wow I love bananas!'})
 
     top_n_q = corpus_quantized.search('What does Mary have?').reset_index()
     top_n_f = corpus_float.search('What does Mary have?').reset_index()
@@ -31,11 +31,11 @@ def test_corpus_update():
     model = Model('all-mpnet-base-v2')
     corpus = SimField(model, cached=False)
 
-    corpus.index(passages={('doc1', 1): 'Mary had a little lamb.',
-                           ('doc1', 2): 'Tom owns a cat.',
-                           ('doc1', 3): 'Wow I love bananas!'})
+    corpus.upsert(passages={('doc1', 1): 'Mary had a little lamb.',
+                            ('doc1', 2): 'Tom owns a cat.',
+                            ('doc1', 3): 'Wow I love bananas!'})
 
-    corpus.index(passages={('doc1', 1): 'Mary had a little ham.'})
+    corpus.upsert(passages={('doc1', 1): 'Mary had a little ham.'})
 
     top_n = corpus.search('What does Mary have?')
     assert len(top_n) == 3
@@ -45,12 +45,27 @@ def test_corpus_upsert():
     model = Model('all-mpnet-base-v2')
     corpus = SimField(model, cached=False)
 
-    corpus.index(passages={('doc1', 1): 'Mary had a little lamb.',
-                           ('doc1', 2): 'Tom owns a cat.',
-                           ('doc1', 3): 'Wow I love bananas!'})
+    corpus.upsert(passages={('doc1', 1): 'Mary had a little lamb.',
+                            ('doc1', 2): 'Tom owns a cat.',
+                            ('doc1', 3): 'Wow I love bananas!'})
 
-    corpus.index(passages={('doc1', 1): 'Mary had a little ham.',
-                           ('doc1', 4): 'And I love apples'})
+    corpus.upsert(passages={('doc1', 1): 'Mary had a little ham.',
+                            ('doc1', 4): 'And I love apples'})
+
+    top_n = corpus.search('What does Mary have?')
+    assert len(top_n) == 4
+
+
+def test_corpus_insert():
+    model = Model('all-mpnet-base-v2')
+    corpus = SimField(model, cached=False)
+
+    corpus.insert(passages={('doc1', 1): 'Mary had a little lamb.',
+                            ('doc1', 2): 'Tom owns a cat.',
+                            ('doc1', 3): 'Wow I love bananas!'})
+
+    corpus.insert(passages={('doc1', 1): 'Mary had a little ham.',
+                            ('doc1', 4): 'And I love apples'})
 
     top_n = corpus.search('What does Mary have?')
     assert len(top_n) == 4
@@ -69,9 +84,9 @@ class BatchCheckingModel:
 def test_corpus_encodes_as_batch():
     model = BatchCheckingModel('dummy')
     corpus = SimField(model, cached=False)
-    corpus.index(passages={("doc1", 1): 'Mary had a little lamb.',
-                           ("doc1", 2): 'Tom owns a cat.',
-                           ("doc1", 3): 'Wow I love bananas!'})
+    corpus.upsert(passages={("doc1", 1): 'Mary had a little lamb.',
+                            ("doc1", 2): 'Tom owns a cat.',
+                            ("doc1", 3): 'Wow I love bananas!'})
 
 
 class DummyModel:
@@ -96,10 +111,9 @@ def test_skipping_updates_faster_than_new_entries():
         d = 1
         p = 1
 
-        corpus.index(passages={(f"doc{d}", p): 'Mary had a little lamb.',
-                               (f"doc{d}", p): 'Tom owns a cat.',
-                               (f"doc{d}", p): 'Wow I love bananas!'},
-                     skip_updates=True)
+        corpus.insert(passages={(f"doc{d}", p): 'Mary had a little lamb.',
+                                (f"doc{d}", p): 'Tom owns a cat.',
+                                (f"doc{d}", p): 'Wow I love bananas!'})
 
     skip_time = perf_counter() - start
 
@@ -112,12 +126,12 @@ def test_skipping_updates_faster_than_new_entries():
         d = idx // 10
         p = idx // 10
 
-        corpus.index(passages={(f"doc{d}", p): 'Mary had a little lamb.',
-                               (f"doc{d}", p): 'Tom owns a cat.',
-                               (f"doc{d}", p): 'Wow I love bananas!'})
+        corpus.upsert(passages={(f"doc{d}", p): 'Mary had a little lamb.',
+                                (f"doc{d}", p): 'Tom owns a cat.',
+                                (f"doc{d}", p): 'Wow I love bananas!'})
 
-        corpus.index(passages={(f"doc{d}", p): 'Mary had a little ham.',
-                               (f"doc{d}", p): 'And I love apples'})
+        corpus.upsert(passages={(f"doc{d}", p): 'Mary had a little ham.',
+                                (f"doc{d}", p): 'And I love apples'})
 
     with_updates_time = perf_counter() - start
     print(with_updates_time, skip_time)
@@ -136,12 +150,12 @@ def test_corpus_upsert_perf_dominated_by_encoding():
         d = idx // 10
         p = idx // 10
 
-        corpus.index(passages={(f"doc{d}", p): 'Mary had a little lamb.',
-                               (f"doc{d}", p): 'Tom owns a cat.',
-                               (f"doc{d}", p): 'Wow I love bananas!'})
+        corpus.upsert(passages={(f"doc{d}", p): 'Mary had a little lamb.',
+                                (f"doc{d}", p): 'Tom owns a cat.',
+                                (f"doc{d}", p): 'Wow I love bananas!'})
 
-        corpus.index(passages={(f"doc{d}", p): 'Mary had a little ham.',
-                               (f"doc{d}", p): 'And I love apples'})
+        corpus.upsert(passages={(f"doc{d}", p): 'Mary had a little ham.',
+                                (f"doc{d}", p): 'And I love apples'})
 
     dummy_time = perf_counter() - start
 
@@ -155,12 +169,12 @@ def test_corpus_upsert_perf_dominated_by_encoding():
         d = idx // 10
         p = idx // 10
 
-        corpus.index(passages={(f"doc{d}", p): 'Mary had a little lamb.',
-                               (f"doc{d}", p): 'Tom owns a cat.',
-                               (f"doc{d}", p): 'Wow I love bananas!'})
+        corpus.upsert(passages={(f"doc{d}", p): 'Mary had a little lamb.',
+                                (f"doc{d}", p): 'Tom owns a cat.',
+                                (f"doc{d}", p): 'Wow I love bananas!'})
 
-        corpus.index(passages={(f"doc{d}", p): 'Mary had a little ham.',
-                               (f"doc{d}", p): 'And I love apples'})
+        corpus.upsert(passages={(f"doc{d}", p): 'Mary had a little ham.',
+                                (f"doc{d}", p): 'And I love apples'})
 
     actual_encoder_time = perf_counter() - start
     print(dummy_time, actual_encoder_time)
@@ -185,16 +199,15 @@ def test_encode_in_loop_slower_than_encode_batch():
     assert batch_time < 3 * iter_time
 
 
-def test_corpus_ignore_updates_mode():
+def test_corpus_ignore_updates_on_insert():
     model = Model('all-mpnet-base-v2')
     corpus = SimField(model, cached=False)
 
-    corpus.index(passages={('doc1', 1): 'Mary had a little lamb.',
-                           ('doc1', 2): 'Tom owns a cat.',
-                           ('doc1', 3): 'Wow I love bananas!'})
+    corpus.upsert(passages={('doc1', 1): 'Mary had a little lamb.',
+                            ('doc1', 2): 'Tom owns a cat.',
+                            ('doc1', 3): 'Wow I love bananas!'})
 
-    corpus.index(passages={('doc1', 1): 'Mary had a little ham.'},
-                 skip_updates=True)
+    corpus.insert(passages={('doc1', 1): 'Mary had a little ham.'})
 
     top_n = corpus.search('What does Mary have?')
     assert len(top_n) == 3

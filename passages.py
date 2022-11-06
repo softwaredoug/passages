@@ -58,7 +58,7 @@ def index(model_name):
         except Exception as e:
             print(e)
 
-    field.index(to_index, skip_updates=True)
+    field.insert(to_index)
 
     return "Created", 201
 

@@ -14,11 +14,22 @@ Path(".cache").mkdir(parents=True, exist_ok=True)
 id_type = Tuple[str, int]
 
 
-def _new_passages() -> pd.DataFrame:
+def _empty_passages() -> pd.DataFrame:
     passages = pd.DataFrame(columns=['doc_id', 'passage_id',
                                      'passage'])
     passages = passages.set_index(['doc_id', 'passage_id'])
     return passages
+
+
+def _passages_from_dict(passages: Mapping[id_type, str]) -> pd.DataFrame:
+    new_passages = pd.DataFrame(passages.items(),
+                                columns=['id', 'passage'])
+    new_passages[['doc_id', 'passage_id']] =\
+        pd.DataFrame(new_passages['id'].tolist(),
+                     columns=['doc_id', 'passage_id'])
+    new_passages = new_passages[['doc_id', 'passage_id', 'passage']]
+    new_passages = new_passages.set_index(['doc_id', 'passage_id'])
+    return new_passages
 
 
 class SimField:
@@ -46,40 +57,51 @@ class SimField:
             if cached:
                 self.passages = pd.read_pickle(f".cache/{self.field_name}.pkl")
             else:
-                self.passages = _new_passages()
+                self.passages = _empty_passages()
         except IOError:
-            self.passages = _new_passages()
+            self.passages = _empty_passages()
 
-    def index(self, passages: Mapping[id_type, str], skip_updates=False):
-        new_passages = pd.DataFrame(passages.items(),
-                                    columns=['id', 'passage'])
-        new_passages[['doc_id', 'passage_id']] =\
-            pd.DataFrame(new_passages['id'].tolist(),
-                         columns=['doc_id', 'passage_id'])
-        new_passages = new_passages[['doc_id', 'passage_id', 'passage']]
-        new_passages = new_passages.set_index(['doc_id', 'passage_id'])
+    def _encode_passages(self, passages: pd.DataFrame) -> pd.DataFrame:
+        encoded = self._quantized_encoder(passages['passage'])
+        passages['passage'] = encoded.tolist()
+        passages['passage'] = passages['passage'].apply(self._as_uint8)
+        return passages
 
-        shared_indices = (
+    def insert(self, passages: Mapping[id_type, str]):
+        """Insert new passages, ignore any that overlap with existing."""
+        new_passages = _passages_from_dict(passages)
+        update_idxs = (
+            new_passages.index.intersection(self.passages.index)
+        )
+        # All updates, we only insert, so ignore...
+        if len(update_idxs) == len(new_passages):
+            return
+
+        inserts = new_passages.loc[
+            new_passages.index.difference(update_idxs)
+        ]
+        inserts = self._encode_passages(inserts)
+        self.passages_lock.acquire()
+        self.passages = pd.concat([self.passages, inserts])
+        self.passages_lock.release()
+
+    def upsert(self, passages: Mapping[id_type, str], skip_updates=False):
+        """Overwrite existing passages and insert new ones."""
+        new_passages = _passages_from_dict(passages)
+
+        update_idxs = (
             new_passages.index.intersection(self.passages.index)
         )
 
-        if skip_updates:
-            if len(shared_indices) == len(new_passages):
-                return
-
-        encoded = self._quantized_encoder(new_passages['passage'])
-        new_passages['passage'] = encoded.tolist()
-        new_passages['passage'] = new_passages['passage'].apply(self._as_uint8)
+        new_passages = self._encode_passages(new_passages)
+        inserts = new_passages.loc[
+            new_passages.index.difference(update_idxs)
+        ]
 
         self.passages_lock.acquire()
-        if not skip_updates:
-            self.passages.loc[shared_indices,
-                              'passage'] = new_passages.loc[shared_indices]
-
-        to_concat = new_passages.loc[
-            new_passages.index.difference(shared_indices)
-        ]
-        self.passages = pd.concat([self.passages, to_concat])
+        self.passages.loc[update_idxs,
+                          'passage'] = new_passages.loc[update_idxs]
+        self.passages = pd.concat([self.passages, inserts])
         self.passages_lock.release()
 
     def stats(self) -> dict:

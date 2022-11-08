@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 import pickle
 from pathlib import Path
-from similarity import similarity, quantize
+from time import perf_counter
+from similarity import similarity, quantize_idx, quantize_query
 from model import Model, CacheModel
 from vector_cache import VectorCache
 
@@ -56,25 +57,28 @@ class SimField:
         try:
             if cached:
                 self.passages = pd.read_pickle(f".cache/{self.field_name}.pkl")
+                print(f"Loaded {len(self.passages)} searchable passages")
             else:
                 self.passages = _empty_passages()
         except IOError:
             self.passages = _empty_passages()
 
     def _encode_passages(self, passages: pd.DataFrame) -> pd.DataFrame:
-        encoded = self._quantized_encoder(passages['passage'])
+        encoded = self._quantized_encoder_idx(passages['passage'])
         passages['passage'] = encoded.tolist()
         passages['passage'] = passages['passage'].apply(self._as_uint8)
         return passages
 
     def insert(self, passages: Mapping[id_type, str]):
         """Insert new passages, ignore any that overlap with existing."""
+        start = perf_counter()
         new_passages = _passages_from_dict(passages)
         update_idxs = (
             new_passages.index.intersection(self.passages.index)
         )
         # All updates, we only insert, so ignore...
         if len(update_idxs) == len(new_passages):
+            print(f"Ins: {perf_counter() - start}")
             return
 
         inserts = new_passages.loc[
@@ -83,7 +87,9 @@ class SimField:
         inserts = self._encode_passages(inserts)
         self.passages_lock.acquire()
         self.passages = pd.concat([self.passages, inserts])
+        assert len(self.passages.columns) == 1
         self.passages_lock.release()
+        print(f"Ins: {perf_counter() - start}")
 
     def upsert(self, passages: Mapping[id_type, str], skip_updates=False):
         """Overwrite existing passages and insert new ones."""
@@ -102,6 +108,7 @@ class SimField:
         self.passages.loc[update_idxs,
                           'passage'] = new_passages.loc[update_idxs]
         self.passages = pd.concat([self.passages, inserts])
+        assert len(self.passages.columns) == 1
         self.passages_lock.release()
 
     def stats(self) -> dict:
@@ -122,12 +129,21 @@ class SimField:
             pickle.dump(cache, f)
 
     def search(self, query: str) -> pd.DataFrame:
-        return similarity(query, self._quantized_encoder,
-                          self.passages, 'passage')
+        start = perf_counter()
+        top_n = similarity(query, self._quantized_encoder_query,
+                           self.passages, 'passage')
+        print(f"Similarity - {perf_counter() - start}")
+        return top_n
 
-    def _quantized_encoder(self, text):
+    def _quantized_encoder_idx(self, text):
         if self.quantize:
-            return quantize(self.model.encode(text))
+            return quantize_idx(self.model.encode(text))
+        else:
+            return self.model.encode(text)
+
+    def _quantized_encoder_query(self, text):
+        if self.quantize:
+            return quantize_query(self.model.encode(text))
         else:
             return self.model.encode(text)
 

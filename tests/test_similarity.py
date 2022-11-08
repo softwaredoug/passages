@@ -1,7 +1,9 @@
 import numpy as np
+import pandas as pd
 import pytest
-from similarity import uint8_nearest_neighbors
+from time import perf_counter
 from random import randint
+from similarity import uint8_nearest_neighbors, similarity
 
 
 def uint8_sim(vect1, vect2):
@@ -46,11 +48,34 @@ def test_uint8_cos_similarity_of_matrix():
             vect2 = np.array([randint(0, 255), randint(0, 255)],
                              dtype=np.uint8)
 
-            matrix = np.array([vect1, vect2], dtype=np.uint8)
+            matrix = 255 - np.array([vect1, vect2], dtype=np.uint8)
 
             idxs, scores = uint8_nearest_neighbors(vect1, matrix)
             assert scores[0] > scores[1]
             assert (idxs == [0, 1]).all()
+
+            matrix -= vect1
             idxs, scores = uint8_nearest_neighbors(vect2, matrix)
             assert scores[0] > scores[1]
             assert (idxs == [1, 0]).all()
+
+
+@pytest.fixture
+def large_dataframe():
+    df = []
+    for i in range(0, 1000000):
+        row = {"doc_id": f"doc_{i}",
+               "passage_id": i,
+               "passage": np.random.randint(0, 255, size=768, dtype=np.uint8)}
+        df.append(row)
+    return pd.DataFrame(df)
+
+
+def test_similarity_dataframe(large_dataframe):
+
+    def test_encoder(query):
+        return np.random.randint(0, 255, size=768, dtype=np.uint8)
+
+    start = perf_counter()
+    top_n = similarity("foo", test_encoder, large_dataframe, "passage")
+    print(f"Similarity {perf_counter() - start}")

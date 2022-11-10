@@ -62,3 +62,17 @@ class CacheModel:
     @property
     def model_name(self):
         return self.model.model_name
+
+
+class EncodedModel:
+    def __init__(self, model, dtype):
+        self.model = model
+        self.dtype = dtype
+
+    def encode(self, passages: Union[str, Iterator[str]]):
+        encoded = self.model.encode(passages).astype(self.dtype)
+        return encoded
+
+    @property
+    def model_name(self):
+        return self.model.model_name

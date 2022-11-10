@@ -6,8 +6,6 @@ import pickle
 from pathlib import Path
 from time import perf_counter
 from similarity import similarity
-from model import Model, CacheModel
-from vector_cache import VectorCache
 
 Path(".cache").mkdir(parents=True, exist_ok=True)
 
@@ -52,15 +50,15 @@ class SimField:
 
     """
 
-    def __init__(self, model: Union[Model, CacheModel],
+    def __init__(self, model,
                  field_name: Optional[str] = None,
-                 dims=768, cached=True, r=None):
+                 dims=768, cached=True):
 
         self.model = model
 
-        if cached and r is not None:
-            vector_cache = VectorCache(r, dtype=np.float32, dims=768)
-            self.model = CacheModel(model, vector_cache)
+        # if cached and r is not None:
+        #    vector_cache = VectorCache(r, dtype=np.float32, dims=768)
+        #    self.model = CacheModel(model, vector_cache)
         self.hits = 0
         self.misses = 0
         self.dims = dims

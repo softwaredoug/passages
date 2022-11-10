@@ -1,8 +1,10 @@
 from typing import Dict
 from flask import Flask, request, jsonify
 from sim_field import SimField
-from model import Model
+from model import Model, CacheModel, EncodedModel
+from vector_cache import VectorCache
 import json
+import numpy as np
 from redis import Redis
 
 
@@ -36,9 +38,13 @@ def stats():
 # Available models
 def load_fields():
     r = Redis('localhost', 6379)
+    vector_cache = VectorCache(r, dtype=np.float32)
     for model_name in ['all-mpnet-base-v2']:
         field_name = model_name + "_field"
-        fields[field_name] = SimField(Model(model_name), r=r)
+        model = Model(model_name)
+        cached_model = CacheModel(model, vector_cache)
+        encoded = EncodedModel(cached_model, dtype=np.half)
+        fields[field_name] = SimField(encoded)
 
 
 @app.route("/index/<model_name>", methods=["POST"])

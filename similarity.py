@@ -42,26 +42,27 @@ def uint8_sim_matrix(query_vector, matrix):
     # the uint8, and be inaccurate. But summing the absolute difference is
     # another way of getting the distance (255 - ...) for the similarity
     # We perform the 255 - on the matrix when encoding it
-    start = perf_counter()
+    # start = perf_counter()
     # Can we do this sum without allocating a new matrix?
     # Like some kind of pairwise add and accumulate?
     # for each ith element
     #   sum += (mat_row[i] + query_vector[i])
     matrix += query_vector
-    print(f"\n>> >> Diff {perf_counter() - start}")
+    # print(f"\n>> >> Diff {perf_counter() - start}")
     tot = np.sum(matrix,
                  dtype=np.uint32,
                  axis=1)
-    print(f">> >> Tot  {perf_counter() - start}")
+    matrix -= query_vector
+    # print(f">> >> Tot  {perf_counter() - start}")
     return tot
 
 
 def uint8_nearest_neighbors(query_vector: np.ndarray,
                             matrix: np.ndarray,
                             n=100):
-    start = perf_counter()
+    # start = perf_counter()
     dotted = uint8_sim_matrix(query_vector, matrix)
-    print(f">>Dot prod took {perf_counter() - start}")
+    # print(f">>Dot prod took {perf_counter() - start}")
     top_n, scores = get_top_n(dotted)
     # print(f">>Top N {perf_counter() - start}")
     return top_n, scores

@@ -7,26 +7,6 @@ import pytest
 from vector_cache import VectorCache
 
 
-def test_corpus_quantized_matches_non_quantized():
-    model = Model('all-mpnet-base-v2')
-    corpus_quantized = SimField(model, quantize=True, cached=False)
-    corpus_float = SimField(model, quantize=False, cached=False)
-
-    corpus_quantized.upsert(passages={('doc1', 1): 'Mary had a little lamb.',
-                                      ('doc1', 2): 'Tom owns a cat.',
-                                      ('doc1', 3): 'Wow I love bananas!'})
-
-    corpus_float.upsert(passages={('doc1', 1): 'Mary had a little lamb.',
-                                  ('doc1', 2): 'Tom owns a cat.',
-                                  ('doc1', 3): 'Wow I love bananas!'})
-
-    top_n_q = corpus_quantized.search('What does Mary have?').reset_index()
-    top_n_f = corpus_float.search('What does Mary have?').reset_index()
-
-    assert top_n_q['doc_id'].to_list() == top_n_f['doc_id'].to_list()
-    assert top_n_q['passage_id'].to_list() == top_n_f['passage_id'].to_list()
-
-
 def test_corpus_update():
     model = Model('all-mpnet-base-v2')
     corpus = SimField(model, cached=False)
@@ -143,9 +123,10 @@ def test_corpus_upsert_perf_dominated_by_encoding():
     corpus = SimField(model, cached=False)
 
     random.seed(1234)
+    num_runs = 10
 
     start = perf_counter()
-    for idx in range(0, 100):
+    for idx in range(0, num_runs):
 
         d = idx // 10
         p = idx // 10
@@ -159,12 +140,13 @@ def test_corpus_upsert_perf_dominated_by_encoding():
 
     dummy_time = perf_counter() - start
 
+    print("\n\n**REAL ENCODE**")
     start = perf_counter()
     model = Model('all-mpnet-base-v2')
     corpus = SimField(model, cached=False)
 
     start = perf_counter()
-    for idx in range(0, 100):
+    for idx in range(0, num_runs):
 
         d = idx // 10
         p = idx // 10

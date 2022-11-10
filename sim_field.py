@@ -90,7 +90,17 @@ class SimField:
     def _explode_passages(self):
         set_passage_col = ~self.passages['passage'].isna()
         to_explode = self.passages.loc[set_passage_col]
+        # The actual exploding is the bottleneck
+        # for indexing (aside from encoding).
         exploded = to_explode['passage'].apply(pd.Series)
+        self.passages = self.passages.drop(columns='passage')
+        self.passages.loc[set_passage_col] = exploded
+
+    def _explode_new_df(self):
+        set_passage_col = ~self.passages['passage'].isna()
+        to_explode = self.passages.loc[set_passage_col]
+        exploded = pd.DataFrame(to_explode['passage'].tolist(),
+                                index=to_explode.index)
         self.passages = self.passages.drop(columns='passage')
         self.passages.loc[set_passage_col] = exploded
 
@@ -112,7 +122,6 @@ class SimField:
         inserts = self._encode_passages(inserts)
         print(f"Enc: {perf_counter() - start}")
         self.passages_lock.acquire()
-        print(f"Lok: {perf_counter() - start}")
         self.passages = pd.concat([self.passages, inserts])
         self._explode_passages()
         self.passages_lock.release()
@@ -123,8 +132,6 @@ class SimField:
         """Overwrite existing passages and insert new ones."""
         start = perf_counter()
         new_passages = _passages_from_dict(passages, self.dims)
-        print("-------")
-        print(f"FrD: {perf_counter() - start}")
 
         update_idxs = (
             new_passages.index.intersection(self.passages.index)
@@ -135,17 +142,15 @@ class SimField:
         inserts = new_passages.loc[
             new_passages.index.difference(update_idxs)
         ]
-        print(f"Ins: {perf_counter() - start}")
 
         self.passages_lock.acquire()
         self.passages.loc[update_idxs,
                           'passage'] = new_passages.loc[update_idxs]
-        print(f"Upd: {perf_counter() - start}")
         self.passages = pd.concat([self.passages, inserts])
         self._explode_passages()
-        print(f"Exp: {perf_counter() - start}")
         self.passages_lock.release()
         assert len(self.passages.columns) == self.dims
+        print(f"Ups: {perf_counter() - start}")
 
     def stats(self) -> dict:
         return {

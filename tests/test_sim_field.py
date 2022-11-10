@@ -161,7 +161,9 @@ def test_corpus_upsert_perf_dominated_by_encoding():
     actual_encoder_time = perf_counter() - start
     print(dummy_time, actual_encoder_time)
 
-    # TODO - fix this
+    # The bottleneck is currently exploding after inserting lists
+    # However, in practice, the encoding of large numbers of vectors
+    # takes so long, that that time is negligible
     assert actual_encoder_time > (4 * dummy_time)
 
 

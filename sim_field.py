@@ -35,7 +35,22 @@ def _passages_from_dict(passages: Mapping[id_type, str], dims) -> pd.DataFrame:
 
 
 class SimField:
-    """A field corresponding to vector data for passages, alongside metadata"""
+    """A field corresponding to vector data for passages, alongside metadata
+
+
+    Internal Details
+    ----------------
+
+    > Storage at rest
+    At rest we want to store a dataframe, where columns are just 0...N of the
+    vector describing each row, with each row indexed by (docid, passage id).
+    This makes it easy to search without performing copies (just a dot product)
+
+    > Indexing a dataframe performantly
+    While updating its faster to update at the object level (assigning objects
+    like lists). Only at the end exploding that list into a more matrix
+
+    """
 
     def __init__(self, model: Union[Model, CacheModel],
                  field_name: Optional[str] = None,
@@ -68,22 +83,16 @@ class SimField:
     def _encode_passages(self,
                          passages: pd.DataFrame,
                          recreate=True) -> pd.DataFrame:
-        start = perf_counter()
         encoded = self._quantized_encoder_idx(passages['passage'])
-        print(f">> Enc: {perf_counter() - start}")
-        if recreate:
-            as_df = pd.DataFrame(encoded)
-            passages_reset = passages.reset_index()
-            as_df['doc_id'] = passages_reset['doc_id']
-            as_df['passage_id'] = passages_reset['passage_id']
-            as_df = as_df.set_index(['doc_id', 'passage_id'])
-            print(f">> AsD: {perf_counter() - start}")
-            return as_df
-        else:
-            passages = passages.drop(columns=['passage'])
-            passages.loc[:, :] = encoded
-            print(f">> Upd: {perf_counter() - start}")
-            return passages
+        passages['passage'] = encoded.tolist()
+        return passages
+
+    def _explode_passages(self):
+        set_passage_col = ~self.passages['passage'].isna()
+        to_explode = self.passages.loc[set_passage_col]
+        exploded = to_explode['passage'].apply(pd.Series)
+        self.passages = self.passages.drop(columns='passage')
+        self.passages.loc[set_passage_col] = exploded
 
     def insert(self, passages: Mapping[id_type, str]):
         """Insert new passages, ignore any that overlap with existing."""
@@ -105,8 +114,9 @@ class SimField:
         self.passages_lock.acquire()
         print(f"Lok: {perf_counter() - start}")
         self.passages = pd.concat([self.passages, inserts])
-        assert len(self.passages.columns) == len(inserts.columns)
+        self._explode_passages()
         self.passages_lock.release()
+        assert len(self.passages.columns) == self.dims
         print(f"Ins: {perf_counter() - start}")
 
     def upsert(self, passages: Mapping[id_type, str], skip_updates=False):
@@ -128,18 +138,14 @@ class SimField:
         print(f"Ins: {perf_counter() - start}")
 
         self.passages_lock.acquire()
-        if len(update_idxs) > 0:
-            print(f"Lok: {perf_counter() - start}")
-            upd_slice = self.passages.loc[update_idxs]
-            print(f"Sl1: {perf_counter() - start}")
-            new_slice = new_passages.loc[update_idxs]
-            print(f"Sl2: {perf_counter() - start}")
-            upd_slice = new_slice  # noqa: F841
-            # self.passages.loc[update_idxs] = new_passages.loc[update_idxs]
-            print(f"Upd: {perf_counter() - start}")
+        self.passages.loc[update_idxs,
+                          'passage'] = new_passages.loc[update_idxs]
+        print(f"Upd: {perf_counter() - start}")
         self.passages = pd.concat([self.passages, inserts])
-        assert len(self.passages.columns) == len(new_passages.columns)
+        self._explode_passages()
+        print(f"Exp: {perf_counter() - start}")
         self.passages_lock.release()
+        assert len(self.passages.columns) == self.dims
 
     def stats(self) -> dict:
         return {

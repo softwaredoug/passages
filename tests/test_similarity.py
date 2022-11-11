@@ -39,6 +39,31 @@ def test_similarity_dataframe_gives_dot_prod_scores(large_dataframe):
     ).all()
 
 
+def test_similarity_dataframe_same_perf_regardless_of_index(large_dataframe):
+    query_vector = np.random.random_sample(size=768)
+
+    def encoder(query):
+        assert query == "foo"
+        return query_vector
+
+    start = perf_counter()
+    similarity("foo", encoder,
+               large_dataframe)
+    print(f"Similarity {perf_counter() - start}")
+
+    large_dataframe['doc_id'] = [idx
+                                 for idx
+                                 in large_dataframe.index]
+    large_dataframe['passage_id'] = [idx
+                                     for idx
+                                     in large_dataframe.index]
+    start = perf_counter()
+    import pdb; pdb.set_trace()
+    similarity("foo", encoder,
+               large_dataframe.drop(columns=['doc_id', 'passage_id']))
+    print(f"Similarity {perf_counter() - start}")
+
+
 def test_similarity_dataframe_flt16_has_high_recall(large_dataframe):
 
     query_vector = np.random.random_sample(size=768)

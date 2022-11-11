@@ -1,6 +1,7 @@
 from typing import Callable, Union
 import numpy as np
 import pandas as pd
+from time import perf_counter
 
 
 def get_top_n(dotted, n=100):
@@ -14,24 +15,26 @@ def exact_nearest_neighbors(query_vector: np.ndarray,
                             n=100):
     """ nth nearest neighbors as array
         with indices of nearest neighbors"""
+    start = perf_counter()
 
     dotted = np.dot(matrix, query_vector)
+    print(f">> Dot - {perf_counter() - start}")
     top_n = get_top_n(dotted)
+    print(f">> Tpn - {perf_counter() - start}")
     return top_n
 
 
 def similarity(query: str, encoder: Callable[[str], np.ndarray],
-               corpus: pd.DataFrame, n=10):
+               corpus: np.ndarray, n=10):
     """corpus is a dataframe with columns 0...n, each row with a normalized
        vector. No additional columns are present."""
 
+    start = perf_counter()
+
     query_vector = encoder(query)
+    print(f"Enc - {perf_counter() - start}")
     top_n, scores = exact_nearest_neighbors(query_vector,
                                             corpus, n=n)
+    print(f" Nn - {perf_counter() - start}")
 
-    top_n = pd.DataFrame({'icol': top_n, 'score': scores})
-    top_n = top_n.set_index('icol').sort_values('score', ascending=False)
-    top_n_corpus = corpus.iloc[top_n.index].copy()
-    top_n_corpus['score'] = sorted(scores, reverse=True)
-
-    return top_n_corpus
+    return top_n, scores

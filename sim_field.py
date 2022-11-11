@@ -45,22 +45,6 @@ def _passages_from_dict(passages: Mapping[id_type, str], dims) -> pd.DataFrame:
 
 
 class SimField:
-    """A field corresponding to vector data for passages, alongside metadata
-
-
-    Internal Details
-    ----------------
-
-    > Storage at rest
-    At rest we want to store a dataframe, where columns are just 0...N of the
-    vector describing each row, with each row indexed by (docid, passage id).
-    This makes it easy to search without performing copies (just a dot product)
-
-    > Indexing a dataframe performantly
-    While updating its faster to update at the object level (assigning objects
-    like lists). Only at the end exploding that list into a more matrix
-
-    """
 
     def __init__(self, model,
                  field_name: Optional[str] = None,
@@ -68,9 +52,6 @@ class SimField:
 
         self.model = model
 
-        # if cached and r is not None:
-        #    vector_cache = VectorCache(r, dtype=np.float32, dims=768)
-        #    self.model = CacheModel(model, vector_cache)
         self.hits = 0
         self.misses = 0
         self.dims = dims
@@ -85,33 +66,23 @@ class SimField:
 
         try:
             if cached:
-                self.passages = pd.read_pickle(f".cache/{self.field_name}.pkl")
+                self.passages = np.load(self.corpus_path)
+                with open(self.index_path, 'rb') as f:
+                    self.index = pickle.load(f)
                 print(f"Loaded {len(self.passages)} searchable passages")
         except IOError:
             pass
 
     def _encode_passages(self,
-                         passages: pd.DataFrame,
-                         recreate=True) -> pd.DataFrame:
-        encoded = self._quantized_encoder_idx(passages['passage'])
-        return encoded
+                         passages: pd.DataFrame) -> pd.DataFrame:
+        passages['passage'] \
+            = self._quantized_encoder_idx(passages['passage']).tolist()
 
-    def _explode_passages(self):
-        set_passage_col = ~self.passages['passage'].isna()
-        to_explode = self.passages.loc[set_passage_col]
-        # The actual exploding is the bottleneck
-        # for indexing (aside from encoding).
-        exploded = to_explode['passage'].apply(pd.Series)
-        self.passages = self.passages.drop(columns='passage')
-        self.passages.loc[set_passage_col] = exploded
+        def half_flt(lst):
+            return np.array(lst, dtype=np.half)
 
-    def _explode_new_df(self):
-        set_passage_col = ~self.passages['passage'].isna()
-        to_explode = self.passages.loc[set_passage_col]
-        exploded = pd.DataFrame(to_explode['passage'].tolist(),
-                                index=to_explode.index)
-        self.passages = self.passages.drop(columns='passage')
-        self.passages.loc[set_passage_col] = exploded
+        passages['passage'] = passages['passage'].apply(half_flt)
+        return passages
 
     def insert(self, passages: Mapping[id_type, str]):
         """Insert new passages, ignore any that overlap with existing."""
@@ -123,11 +94,9 @@ class SimField:
         orig_index_size = len(self.index)
         new_passages = _passages_from_dict(passages, self.dims)
 
-        # FIX RACE ON INDEX KEYS
         new_passages['key'] = new_passages['id'].apply(self.index.get_key)
         if not skip_updates:
-            new_passages['passage'] \
-                = new_passages['passage'].apply(self._quantized_encoder_idx)
+            new_passages = self._encode_passages(new_passages)
 
         updates = new_passages.loc[
             new_passages['key'] < orig_index_size, :
@@ -139,8 +108,7 @@ class SimField:
         if len(inserts) == 0 and skip_updates:
             return
         elif skip_updates:
-            inserts['passage'] \
-                = inserts['passage'].apply(self._quantized_encoder_idx)
+            inserts = self._encode_passages(inserts)
 
         self.passages_lock.acquire()
         if self.passages is None:
@@ -169,17 +137,17 @@ class SimField:
             "misses": self.misses
         }
 
-    def is_empty(self):
-        return self.passages.shape == (0,)
-
     def persist(self):
         self.passages_lock.acquire()
         cache = self.passages.copy()
-        # if r:
-        #    r.save()
+        index = self.index.copy()
         self.passages_lock.release()
-        with open(f".cache/{self.field_name}.pkl", "wb") as f:
-            pickle.dump(cache, f)
+        # NOT ATOMIC
+        # Not particularly safe to reload if either write fails
+        with open(self.corpus_path, "wb") as f:
+            np.save(cache, f)
+        with open(self.index_path, "wb") as f:
+            pickle.dump(index, f)
 
     def search(self, query: str) -> pd.DataFrame:
         if self.passages is None:
@@ -200,3 +168,11 @@ class SimField:
 
     def _quantized_encoder_query(self, text):
         return self.model.encode(text)
+
+    @property
+    def corpus_path(self):
+        return f".cache/passages_{self.field_name}.pkl"
+
+    @property
+    def index_path(self):
+        return f".cache/index_{self.field_name}.pkl"

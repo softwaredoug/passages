@@ -1,4 +1,4 @@
-from typing import Callable, Union
+from typing import Union
 import numpy as np
 import pandas as pd
 from time import perf_counter
@@ -22,19 +22,3 @@ def exact_nearest_neighbors(query_vector: np.ndarray,
     top_n = get_top_n(dotted)
     print(f">> Tpn - {perf_counter() - start}")
     return top_n
-
-
-def similarity(query: str, encoder: Callable[[str], np.ndarray],
-               corpus: np.ndarray, n=10):
-    """corpus is a dataframe with columns 0...n, each row with a normalized
-       vector. No additional columns are present."""
-
-    start = perf_counter()
-
-    query_vector = encoder(query)
-    print(f"Enc - {perf_counter() - start}")
-    top_n, scores = exact_nearest_neighbors(query_vector,
-                                            corpus, n=n)
-    print(f" Nn - {perf_counter() - start}")
-
-    return top_n, scores

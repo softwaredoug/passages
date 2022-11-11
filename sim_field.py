@@ -1,4 +1,4 @@
-from typing import Optional, Mapping, Tuple, Union, List
+from typing import Optional, Mapping, Tuple
 from threading import Lock
 import pandas as pd
 import numpy as np
@@ -32,14 +32,6 @@ class ArrayIndex:
 
     def __len__(self):
         return len(self.index)
-
-
-def _empty_passages(dims) -> pd.DataFrame:
-    # columns: List[Union[str, int]] = ['doc_id', 'passage_id']
-    # columns.extend(list(range(dims)))
-    # passages = pd.DataFrame(columns=columns)
-    # passages = passages.set_index(['doc_id', 'passage_id'])
-    return np.array([], dtype=np.half)
 
 
 def _passages_from_dict(passages: Mapping[id_type, str], dims) -> pd.DataFrame:
@@ -89,15 +81,14 @@ class SimField:
             field_name = self.model.model_name + "_sim_field"
         self.field_name = field_name
         self.passages_lock = Lock()
+        self.passages = None
 
         try:
             if cached:
                 self.passages = pd.read_pickle(f".cache/{self.field_name}.pkl")
                 print(f"Loaded {len(self.passages)} searchable passages")
-            else:
-                self.passages = _empty_passages(self.dims)
         except IOError:
-            self.passages = _empty_passages(self.dims)
+            pass
 
     def _encode_passages(self,
                          passages: pd.DataFrame,
@@ -148,16 +139,17 @@ class SimField:
         if len(inserts) == 0 and skip_updates:
             return
         elif skip_updates:
-            new_passages['passage'] \
-                = new_passages['passage'].apply(self._quantized_encoder_idx)
+            inserts['passage'] \
+                = inserts['passage'].apply(self._quantized_encoder_idx)
 
         self.passages_lock.acquire()
-        if self.is_empty():
+        if self.passages is None:
             self.passages = np.array(inserts['passage'].tolist())
-        else:
+        elif len(inserts) > 0:
             # Assumes inserts will be placed in the right index
+            insert_arrs = np.array(inserts['passage'].tolist())
             self.passages = np.vstack([self.passages,
-                                       np.array(inserts['passage'].tolist())])
+                                       insert_arrs])
 
         if len(updates) > 0 and not skip_updates:
             updated_arrs = np.array(updates['passage'].tolist())
@@ -167,8 +159,11 @@ class SimField:
         return
 
     def stats(self) -> dict:
+        cache_size = 0
+        if self.passages is not None:
+            cache_size = len(self.passages)
         return {
-            "cache_size": len(self.passages),
+            "cache_size": cache_size,
             "is_cached": self.last_cached,
             "hits": self.hits,
             "misses": self.misses
@@ -187,9 +182,12 @@ class SimField:
             pickle.dump(cache, f)
 
     def search(self, query: str) -> pd.DataFrame:
+        if self.passages is None:
+            return pd.DataFrame()
         start = perf_counter()
-        top_n, scores = exact_nearest_neighbors(self._quantized_encoder_query(query),
-                                                self.passages)
+        top_n, scores = \
+            exact_nearest_neighbors(self._quantized_encoder_query(query),
+                                    self.passages)
         results = pd.DataFrame()
         results['key'] = top_n
         results['score'] = scores

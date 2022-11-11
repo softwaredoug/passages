@@ -3,8 +3,10 @@ from threading import Lock
 import pandas as pd
 import numpy as np
 import pickle
+import warnings
 from pathlib import Path
 from time import perf_counter
+from copy import deepcopy
 from similarity import exact_nearest_neighbors
 
 Path(".cache").mkdir(parents=True, exist_ok=True)
@@ -30,6 +32,22 @@ class ArrayIndex:
     def index_for(self, idx):
         return self.reverse_index[idx]
 
+    def copy(self):
+        copy = ArrayIndex()
+        copy.index = deepcopy(self.index)
+        copy.reverse_index = deepcopy(self.reverse_index)
+        return copy
+
+    def keep_only(self, num_to_keep):
+        copy = ArrayIndex()
+        # This should be a dict expression
+        for idx, val in self.index.items():
+            if val < num_to_keep:
+                copy.index[idx] = val
+                copy.reverse_index[val] = idx
+        assert len(copy) == num_to_keep
+        return copy
+
     def __len__(self):
         return len(self.index)
 
@@ -37,9 +55,6 @@ class ArrayIndex:
 def _passages_from_dict(passages: Mapping[id_type, str], dims) -> pd.DataFrame:
     new_passages = pd.DataFrame(passages.items(),
                                 columns=['id', 'passage'])
-    # new_passages[['doc_id', 'passage_id']] =\
-    #    pd.DataFrame(new_passages['id'].tolist(),
-    #                 columns=['doc_id', 'passage_id'])
     new_passages = new_passages[['id', 'passage']]
     return new_passages
 
@@ -69,8 +84,14 @@ class SimField:
                 self.passages = np.load(self.corpus_path)
                 with open(self.index_path, 'rb') as f:
                     self.index = pickle.load(f)
+                if len(self.passages) > len(self.index):
+                    raise IOError("Invalid local cache files, skipping")
+                else:
+                    self.index = self.index.keep_only(len(self.passages))
+                assert len(self.index) == len(self.passages)
                 print(f"Loaded {len(self.passages)} searchable passages")
-        except IOError:
+        except IOError as e:
+            warnings.warn(f"Handling {e} - resetting corpus")
             pass
 
     def _encode_passages(self,
@@ -94,7 +115,10 @@ class SimField:
         orig_index_size = len(self.index)
         new_passages = _passages_from_dict(passages, self.dims)
 
+        self.passages_lock.acquire()
         new_passages['key'] = new_passages['id'].apply(self.index.get_key)
+        self.passages_lock.release()
+
         if not skip_updates:
             new_passages = self._encode_passages(new_passages)
 
@@ -144,8 +168,7 @@ class SimField:
         self.passages_lock.release()
         # NOT ATOMIC
         # Not particularly safe to reload if either write fails
-        with open(self.corpus_path, "wb") as f:
-            np.save(cache, f)
+        np.save(self.corpus_path, cache)
         with open(self.index_path, "wb") as f:
             pickle.dump(index, f)
 
@@ -171,7 +194,7 @@ class SimField:
 
     @property
     def corpus_path(self):
-        return f".cache/passages_{self.field_name}.pkl"
+        return f".cache/passages_{self.field_name}.npy"
 
     @property
     def index_path(self):

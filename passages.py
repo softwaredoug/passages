@@ -77,9 +77,10 @@ def search(model_name):
     query = args.get('q')
     results = []
     top_n = field.search(query)
-    for row in top_n.iterrows():
-        results.append({'doc_id': row[0][0],
-                        'passage_id': int(row[0][1])})
+    for row in top_n.to_dict(orient='records'):
+        results.append({'score': row['score'],
+                        'doc_id': row['id'][0],
+                        'passage_id': int(row['id'][1])})
     return jsonify(results)
 
 

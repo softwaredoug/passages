@@ -44,8 +44,10 @@ def test_similarity_dataframe_flt16_has_high_recall(large_dataframe):
 
     query_vector = np.random.random_sample(size=768)
 
+    start = perf_counter()
     top_n = exact_nearest_neighbors(query_vector,
                                     large_dataframe)
+    print(f"f64 similarity {perf_counter() - start}")
     top_n = keys(top_n)
 
     query16 = query_vector.astype(np.half)
@@ -54,8 +56,8 @@ def test_similarity_dataframe_flt16_has_high_recall(large_dataframe):
     start = perf_counter()
     top_n16 = exact_nearest_neighbors(query16,
                                       half_df)
+    print(f"f16 Similarity {perf_counter() - start}")
     top_n16 = keys(top_n16)
-    print(f"Similarity {perf_counter() - start}")
 
     assert recall(top_n, top_n16) >= 0.95
 

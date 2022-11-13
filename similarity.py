@@ -34,3 +34,21 @@ def exact_nearest_neighbors(query_vector: np.ndarray,
     top_n = get_top_n(dotted, n=n)
     print(f">> Tpn - {perf_counter() - start}")
     return top_n
+
+
+def exact_farthest_neighbors(query_vector: np.ndarray,
+                             matrix: Union[np.ndarray, pd.DataFrame],
+                             n=100):
+    """ nth farthest  as array
+        with indices of nearest neighbors"""
+    dotted = np.dot(matrix, query_vector)
+    top_n = get_top_n(-dotted, n=n)
+    return top_n
+
+
+def random_neighbors(query_vector: np.ndarray,
+                     matrix: Union[np.ndarray, pd.DataFrame],
+                     n=100):
+    dotted = np.dot(matrix, query_vector)
+    randoms = np.random.randint(len(matrix), size=n)
+    return list(zip(randoms, dotted[randoms]))

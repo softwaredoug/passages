@@ -26,6 +26,16 @@ def quantize_idx(arr):
     return quantize_query(arr)
 
 
+def log_encode(arr, dtype=np.uint8, base=2):
+    """ Return scale_up * np.log2(arr)."""
+    if base == 2:
+        log_scale = np.log2(arr)
+    else:
+        log_scale = np.log2(arr) / np.log2(base)
+
+    return log_scale.astype(dtype)
+
+
 def uint8_nearest_neighbors(query_vector: np.ndarray,
                             matrix: Union[np.ndarray, pd.DataFrame],
                             n=100):

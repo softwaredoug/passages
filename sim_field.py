@@ -7,7 +7,7 @@ import warnings
 from pathlib import Path
 from time import perf_counter
 from copy import deepcopy
-from similarity import exact_nearest_neighbors
+from similarity import exact_nearest_neighbors, keys, scores
 
 Path(".cache").mkdir(parents=True, exist_ok=True)
 
@@ -89,7 +89,9 @@ class SimField:
                 else:
                     self.index = self.index.keep_only(len(self.passages))
                 assert len(self.index) == len(self.passages)
-                print(f"Loaded {len(self.passages)} searchable passages")
+                assert self.passages.dtype == np.half
+                print(f"Loaded {len(self.passages)} searchable passages"
+                      f" ({self.passages.nbytes} bytes)")
         except IOError as e:
             warnings.warn(f"Handling {e} - resetting corpus")
             pass
@@ -152,10 +154,13 @@ class SimField:
 
     def stats(self) -> dict:
         cache_size = 0
+        nbytes = 0
         if self.passages is not None:
             cache_size = len(self.passages)
+            nbytes = self.passages.nbytes
         return {
-            "cache_size": cache_size,
+            "num_passages": cache_size,
+            "bytes": nbytes,
             "is_cached": self.last_cached,
             "hits": self.hits,
             "misses": self.misses
@@ -163,25 +168,23 @@ class SimField:
 
     def persist(self):
         self.passages_lock.acquire()
-        cache = self.passages.copy()
-        index = self.index.copy()
-        self.passages_lock.release()
         # NOT ATOMIC
         # Not particularly safe to reload if either write fails
-        np.save(self.corpus_path, cache)
+        np.save(self.corpus_path, self.passages)
         with open(self.index_path, "wb") as f:
-            pickle.dump(index, f)
+            pickle.dump(self.index, f)
+        self.passages_lock.release()
 
     def search(self, query: str) -> pd.DataFrame:
         if self.passages is None:
             return pd.DataFrame()
         start = perf_counter()
-        top_n, scores = \
+        top_n = \
             exact_nearest_neighbors(self._quantized_encoder_query(query),
                                     self.passages)
         results = pd.DataFrame()
-        results['key'] = top_n
-        results['score'] = scores
+        results['key'] = keys(top_n)
+        results['score'] = scores(top_n)
         results['id'] = results['key'].apply(self.index.index_for)
         print(f"SCH - {perf_counter() - start}")
         return results

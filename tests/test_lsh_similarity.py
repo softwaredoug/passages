@@ -66,20 +66,12 @@ def hamming_sim_xor(hashes, comp_keys, key):
     return xor_sim
 
 
-def transplant_bits(hashes, key, others, num_to_change, hash_len,
-                    share=False):
-    """ Share or unshare num_to_change bits from key -> others"""
-    assert key not in others
-    int64_to_modify = np.random.randint(hash_len)
+def random_mask_of_n_bits(num_bits) -> np.int64:
+    """Random mask up to 64 bits long."""
+    shift_by = min(num_bits, 64)
+    overlap_at = np.random.randint(65 - shift_by)
 
-    # Right shift will N to zero fill key hash
-    # and force additional dissimilarity with comp_keys
-    shift_by = min(num_to_change, 63)
-    if shift_by == 0:
-        return hashes
-    overlap_at = np.random.randint(64 - shift_by)
-
-    # zero lower shift_by bits, set in others
+    # zero lower shift_by bits, set in dest
     mask = -1 << shift_by
 
     # Shift up to some random spot in the 64 bits
@@ -89,34 +81,56 @@ def transplant_bits(hashes, key, others, num_to_change, hash_len,
     mask += incr_by
     mask = ~mask
 
-    print(f" Cng - {num_to_change} - share? {share}")
-    print(f" Bef - Mask   {int64_to_modify} - {np.uint64(mask):064b}")
-    for i in range(0, 10):
-        print(f" Bef - Hash {i},{int64_to_modify} - {np.uint64(hashes[i, int64_to_modify]):064b}")
+    mask = np.int64(np.uint64(mask))
 
-    others_before = hashes[others, int64_to_modify].copy()
-    hashes[others, int64_to_modify] &= ~mask  # Clear shared bits
-    to_assign = mask & hashes[key, int64_to_modify]
+    return mask
+
+
+def transplant_bits(hashes: np.ndarray, src: int, dest: np.ndarray,
+                    num_to_change: int, hash_to_modify: int,
+                    share=False):
+    """ Share or unshare num_to_change bits from src -> dest in hashes"""
+    assert src not in dest
+
+    if num_to_change == 0:
+        return hashes
+
+    mask = random_mask_of_n_bits(num_to_change)
+
+    if num_to_change == 64:
+        assert mask == -1
+
+    # print(f" Cng - {num_to_change} - share? {share}")
+    # print(f" Bef - Mask   {hash_to_modify} - {np.uint64(mask):064b}")
+    # for i in range(0, len(hashes)):
+    #     print(f" Bef - Hash {i},{hash_to_modify} - {np.uint64(hashes[i, hash_to_modify]):064b}") # noqa: E501
+
+    # dest_before = hashes[dest, hash_to_modify].copy()
+    hashes[dest, hash_to_modify] &= ~mask  # Clear shared bits
+    to_assign = mask & hashes[src, hash_to_modify]
     if not share:
-        to_assign = mask & ~hashes[key, int64_to_modify]
+        to_assign = mask & ~hashes[src, hash_to_modify]
 
-    hashes[others, int64_to_modify] |= to_assign
+    hashes[dest, hash_to_modify] |= to_assign
 
-    print(f" Aft - Mask   {int64_to_modify} - {np.uint64(mask):064b}")
-    for i in range(0, 10):
-        print(f" Aft - Hash {i},{int64_to_modify} - {np.uint64(hashes[i, int64_to_modify]):064b}")
-    print(f" Aft - Changes - {np.sum(others_before != hashes[others, int64_to_modify])}")
+    # print(f" Aft - Mask   {hash_to_modify} - {np.uint64(mask):064b}")
+    # for i in range(0, len(hashes)):
+    #     print(f" Aft - Hash {i},{hash_to_modify} - {np.uint64(hashes[i, hash_to_modify]):064b}")  # noqa: E501
+    # print(f" Aft - Changes - {np.sum(dest_before != hashes[dest, hash_to_modify])}")  # noqa: E501
 
     return hashes
 
 
 def unshare_bits(hashes, key, others, num_to_change, hash_len):
-    return transplant_bits(hashes, key, others, num_to_change, hash_len,
+    hash_to_modify = np.random.randint(hash_len)
+    return transplant_bits(hashes, key, others,
+                           num_to_change, hash_to_modify,
                            share=False)
 
 
 def share_bits(hashes, key, others, num_to_change, hash_len):
-    return transplant_bits(hashes, key, others, num_to_change, hash_len,
+    hash_to_modify = np.random.randint(hash_len)
+    return transplant_bits(hashes, key, others, num_to_change, hash_to_modify,
                            share=True)
 
 
@@ -281,6 +295,15 @@ def run_lsh_scenario(rows, dims, hash_len, rounds, eval_at):
     return recall, rounds_took
 
 
+def test_lsh_one_large_converges():
+    rounds = 10000
+    recall, rounds_took = run_lsh_scenario(rows=100000, dims=768,
+                                           hash_len=16,
+                                           rounds=rounds, eval_at=10)
+    assert recall >= 0.9
+    assert rounds_took < rounds
+
+
 def test_lsh_one_medium_converges():
     rounds = 10000
     recall, rounds_took = run_lsh_scenario(rows=1000, dims=768,
@@ -335,9 +358,7 @@ def test_unshare_bits_makes_less_similar():
     for i in range(0, 100):
 
         hashes_before = hashes.copy()
-        hashes = transplant_bits(hashes, key, unshare_with,
-                                 i % 8, hash_len,
-                                 share=False)
+        hashes = unshare_bits(hashes, key, unshare_with, i % 8, hash_len)
         changed = (hashes_before != hashes).any(axis=1)
         changed_hashes = np.argwhere(changed).reshape(1, -1)[0]
         changed_non_key_hashes = changed_hashes[changed_hashes > 0]
@@ -406,3 +427,38 @@ def test_hamming_distance_zero_to_positive_one():
     assert (sim == [1.0, 0.0]).all()
     sim = hamming_sim_xor(hashes, [0, 1], 1)
     assert (sim == [0.0, 1.0]).all()
+
+
+def test_mask_of_size_n():
+
+    for requested_mask_size in range(0, 126):
+        expected_mask_size = min(requested_mask_size, 64)
+        mask = random_mask_of_n_bits(expected_mask_size)
+        assert bit_count64(mask) == expected_mask_size
+
+
+def test_unshare_bits_unsets_all_bits():
+    hashes = np.array([np.array([np.int64(0), np.int64(0)]),
+                       np.array([np.int64(0), np.int64(0)])])
+
+    key = 0
+    unshare_with = [1]
+
+    hashes = transplant_bits(hashes,
+                             key,
+                             unshare_with,
+                             64,
+                             0,
+                             share=False)
+
+    hashes = transplant_bits(hashes,
+                             key,
+                             unshare_with,
+                             64,
+                             1,
+                             share=False)
+
+    sim = hamming_sim_xor(hashes, [0, 1], key)
+
+    assert sim[0] == 1.0
+    assert sim[1] == 0.0

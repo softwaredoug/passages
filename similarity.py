@@ -30,9 +30,9 @@ def exact_nearest_neighbors(query_vector: np.ndarray,
     start = perf_counter()
 
     dotted = np.dot(matrix, query_vector)
-    print(f">> Dot - {perf_counter() - start}")
+    # print(f">> Dot - {perf_counter() - start}")
     top_n = get_top_n(dotted, n=n)
-    print(f">> Tpn - {perf_counter() - start}")
+    # print(f">> Tpn - {perf_counter() - start}")
     return top_n
 
 

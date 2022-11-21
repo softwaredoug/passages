@@ -66,14 +66,15 @@ def hamming_sim_xor(hashes, comp_keys, key):
     return xor_sim
 
 
-def unshare_n_bits(hashes, key, others, num_to_unshare, hash_len):
-    """ Unshares between 0, min(bit_flips) between keys / comp_keys."""
+def transplant_bits(hashes, key, others, num_to_change, hash_len,
+                    share=False):
+    """ Share or unshare num_to_change bits from key -> others"""
     assert key not in others
     int64_to_modify = np.random.randint(hash_len-1)
 
     # Right shift will N to zero fill key hash
     # and force additional dissimilarity with comp_keys
-    shift_by = min(num_to_unshare, 62)
+    shift_by = min(num_to_change, 61)
     overlap_at = np.random.randint(62 - shift_by)
 
     # zero lower shift_by bits, set in others
@@ -84,24 +85,41 @@ def unshare_n_bits(hashes, key, others, num_to_unshare, hash_len):
     incr_by = (2 ** overlap_at) - 1
     mask <<= overlap_at
     mask += incr_by
+    mask = ~mask
 
-    print(f" Hash {int64_to_modify} - {bin(np.uint64(mask))}")
+    print(f" Cng - {num_to_change} - share? {share}")
+    print(f" Bef - Mask   {int64_to_modify} - {np.uint64(mask):064b}")
+    print(f" Bef - Hash 0,{int64_to_modify} - {np.uint64(hashes[0, int64_to_modify]):064b}")
+    print(f" Bef - Hash 1,{int64_to_modify} - {np.uint64(hashes[1, int64_to_modify]):064b}")
 
-    # (Pdb) bin(np.uint64((mask << 10) + (2 ** 10 - 1)))
-    hashes[key, int64_to_modify] &= mask
-    hashes[others, int64_to_modify] |= ~mask
+    others_before = hashes[others, int64_to_modify].copy()
+    hashes[others, int64_to_modify] &= ~mask  # Clear shared bits
+    to_assign = mask & hashes[key, int64_to_modify]
+    if not share:
+        to_assign = mask & ~hashes[key, int64_to_modify]
+
+    hashes[others, int64_to_modify] |= to_assign
+
+    print(f" Aft - Mask   {int64_to_modify} - {np.uint64(mask):064b}")
+    print(f" Aft - Hash 0,{int64_to_modify} - {np.uint64(hashes[0, int64_to_modify]):064b}")
+    print(f" Aft - Hash 1,{int64_to_modify} - {np.uint64(hashes[1, int64_to_modify]):064b}")
+    print(f" Aft - Changes - {np.sum(others_before != hashes[others, int64_to_modify])}")
 
     return hashes
 
 
-def set_n_bits(hashes, keys, num_to_set, hash_len):
-    int64_to_modify = np.random.randint(hash_len-1)
-    shift_by = min(num_to_set, 62)
-    hashes[keys, int64_to_modify] |= np.int64(1 << shift_by)
-    return hashes
+def unshare_bits(hashes, key, others, num_to_change, hash_len):
+    return transplant_bits(hashes, key, others, num_to_change, hash_len,
+                           share=False)
+
+
+def share_bits(hashes, key, others, num_to_change, hash_len):
+    return transplant_bits(hashes, key, others, num_to_change, hash_len,
+                           share=True)
 
 
 def train_one(hashes, vectors, key, hash_len, learn_rate=0.1):
+    """ Modify hashes to be closer / farther from hashes[key] using 'vector'."""
     vect = vectors[key]
     # nn = exact_nearest_neighbors(vect, vectors, 100)
     # fn = exact_farthest_neighbors(vect, vectors, 100)
@@ -110,7 +128,9 @@ def train_one(hashes, vectors, key, hash_len, learn_rate=0.1):
 
     # dedup
     comp_keys = np.array(range(0, len(vectors)))
-    comp_scores = dotted
+    comp_scores = (dotted + 1) / 2
+    assert (comp_scores <= 1.0).all()
+    assert (comp_scores >= 0.0).all()
     # for key, score in nn + fn + rn:
     #    if key not in comp_keys:
     #        comp_keys.append(key)
@@ -118,84 +138,163 @@ def train_one(hashes, vectors, key, hash_len, learn_rate=0.1):
 
     total_bits = (hash_len * 64)
     bit_sim = hamming_sim_xor(hashes, comp_keys, key)
+    sim_diff = (comp_scores - bit_sim)
+    print(f" >> SDF - {sim_diff}")
+    # import pdb; pdb.set_trace()
     bit_flips = np.int64(
-        learn_rate * (comp_scores - bit_sim) * total_bits
+        learn_rate * sim_diff * total_bits
     )
+    # Clear some bit flips to only compare to a subset of the
+    # potential changes
+    # bit_flips *= np.random.randint(2, size=len(bit_flips))
 
     to_share = bit_flips[bit_flips > 0]
     to_unshare = bit_flips[bit_flips < 0]
 
+    print(f">> {bit_flips}")
+
     if len(to_unshare) > 0:
         num_to_unshare = -np.max(to_unshare)
+        num_to_unshare_min = -np.min(to_unshare)
         keys_to_unshare = comp_keys[bit_flips < 0]
         assert keys not in keys_to_unshare
         bit_sim_before = hamming_sim_xor(hashes,
                                          keys_to_unshare,
                                          key)
         assert num_to_unshare > 0
-        hashes = unshare_n_bits(hashes, key, keys_to_unshare,
-                                num_to_unshare, hash_len)
-        print(f"Unshared {num_to_unshare} bits / {num_to_unshare}")
+        # print("------------")
+        print(f">> {key} - Unsharing {num_to_unshare} bits / {num_to_unshare_min}-{num_to_unshare} for {keys_to_unshare}")
+        hashes = unshare_bits(hashes, key, keys_to_unshare,
+                              num_to_unshare, hash_len)
+        # print("------------")
         bit_sim_after = hamming_sim_xor(hashes,
                                         keys_to_unshare,
                                         key)
         assert (bit_sim_after <= bit_sim_before).all()
     if len(to_share) > 0:
-        num_to_set = np.min(to_share)
+        num_to_share = np.min(to_share)
+        assert num_to_share > 0
         keys_to_share = comp_keys[bit_flips > 0]
-        hashes = set_n_bits(hashes, keys_to_share + [key],
-                            num_to_set, hash_len)
-        print(f"Shared {num_to_set} bits / {len(to_share)}")
+        assert keys not in keys_to_share
+        bit_sim_before = hamming_sim_xor(hashes,
+                                         keys_to_share,
+                                         key)
+        print(f">> {key} -   Sharing {num_to_share} bits for {keys_to_share}")
+        hashes = share_bits(hashes, key, keys_to_share,
+                            num_to_share, hash_len)
+        bit_sim_after = hamming_sim_xor(hashes,
+                                        keys_to_share,
+                                        key)
+        print(f">> {bit_sim_before}")
+        print(f">> {bit_sim_after}")
+        assert (bit_sim_after >= bit_sim_before).all()
+        # print(f"Shared {num_to_share} bits / {len(to_share)}")
     top_n = sorted(hamming_sim_xor(hashes, comp_keys, key), reverse=True)[:10]
-    print(top_n)
+    # print(top_n)
 
     return hashes
 
 
 def train(vectors, learn_rate=0.1):
-    hash_len = 8
+    hash_len = 16
+    # rows = 1000
     hashes = np.random.randint(INT64_MAX - 1,
                                dtype=np.int64,
                                size=(len(vectors),
                                      hash_len))
 
-    rounds = 3000
+    start = perf_counter()
+    last_recall = 0.0
+    rounds = 300000
+    for i in range(rounds):
+        hashes = train_one(hashes, vectors, i % len(vectors), hash_len)
 
-    for key, vect in enumerate(vectors):
-        # We might want this to be random dot products, not
-        # closest / farthest?
-        for i in range(rounds):
-            hashes = train_one(hashes, vectors, key, hash_len, learn_rate)
+        if i % 100 == 0:
+            n = 10
+            top_n_lsh = lsh_nearest_neighbors(hashes, 0, n=n)
+            top_n_nn = exact_nearest_neighbors(vectors[0], vectors, n=n)
+            recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
+            delta_recall = recall - last_recall
+            print(f"{i}")
+            print(f"RECALL - {recall}, {delta_recall}")
+            print(f"  PERF - {perf_counter() - start}")
+            print(top_n_lsh)
+            # assert delta_recall >= -0.1
+            last_recall = recall
+
     return hashes
 
 
 def lsh_nearest_neighbors(hashes, key, n=10):
     sim = hamming_sim_xor(hashes, slice(0, len(hashes)), key)
-    return get_top_n(sim, n=10)
+    return get_top_n(sim, n=n)
 
 
-def test_lsh_one():
-    vectors = random_normed_matrix(1000)
-    hash_len = 8
+def run_lsh_scenario(rows, dims, hash_len, rounds, eval_at):
+    """Run lsh scenario with optimizing to a single target."""
+    vectors = random_normed_matrix(rows, dims=dims)
     hashes = np.random.randint(INT64_MAX - 1,
                                dtype=np.int64,
                                size=(len(vectors),
                                      hash_len))
 
-    rounds = 10000
+    last_recall = 0.0
+    n = eval_at
+    start = perf_counter()
     for i in range(rounds):
+        print("---")
+        print(f"{i}")
+        print(lsh_nearest_neighbors(hashes, 0, n=10))
         hashes = train_one(hashes, vectors, 0, hash_len)
 
-    n = 10
+        top_n_lsh = lsh_nearest_neighbors(hashes, 0, n=n)
+        top_n_nn = exact_nearest_neighbors(vectors[0], vectors, n=n)
+        recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
+        delta_recall = recall - last_recall
+        print(f"RECALL@{eval_at} - {recall}, {delta_recall}")
+        print(f"  PERF   - {perf_counter() - start}")
+        # print(exact_nearest_neighbors(vectors[0], vectors, n=10))
+        print(lsh_nearest_neighbors(hashes, 0, n=10))
+        # assert delta_recall >= -0.1
+        last_recall = recall
+        print("---")
     top_n_lsh = lsh_nearest_neighbors(hashes, 0, n=n)
     top_n_nn = exact_nearest_neighbors(vectors[0], vectors, n=n)
     recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
-    assert recall > 0.1
+    print("FINAL")
+    print(f"RECALL@{eval_at} - {recall}")
+    print(f"  PERF   - {perf_counter() - start}")
+    exact = exact_nearest_neighbors(vectors[0], vectors, n=10)
+    exact = [(idx, (score + 1) / 2) for idx, score in exact]
+    print(f" LS {lsh_nearest_neighbors(hashes, 0, n=10)}")
+    print(f" GT {exact}")
+    return recall
+
+
+@pytest.mark.skip("LSH similarity is experimental")
+def test_lsh_one_medium_converges():
+    recall = run_lsh_scenario(rows=1000, dims=768,
+                              hash_len=16,
+                              rounds=10000, eval_at=10)
+    assert recall >= 0.9
+
+
+def test_lsh_one_small_converges():
+    recall = run_lsh_scenario(rows=100, dims=4, hash_len=16,
+                              rounds=10000, eval_at=2)
+    assert recall == 1.0
+
+
+def test_lsh_one_tiny_converges():
+
+    recall = run_lsh_scenario(rows=10, dims=4, hash_len=16,
+                              rounds=10000, eval_at=2)
+    assert recall == 1.0
 
 
 @pytest.mark.skip("LSH similarity is experimental")
 def test_lsh():
-    vectors = random_normed_matrix(1000)
+    vectors = random_normed_matrix(1000, dims=768)
 
     lsh = train(vectors)
 
@@ -222,8 +321,9 @@ def test_unshare_bits_makes_less_similar():
     for i in range(0, 100):
 
         hashes_before = hashes.copy()
-        hashes = unshare_n_bits(hashes, key, unshare_with,
-                                i % 8, hash_len)
+        hashes = transplant_bits(hashes, key, unshare_with,
+                                 i % 8, hash_len,
+                                 share=False)
         changed = (hashes_before != hashes).any(axis=1)
         changed_hashes = np.argwhere(changed).reshape(1, -1)[0]
         changed_non_key_hashes = changed_hashes[changed_hashes > 0]
@@ -282,3 +382,13 @@ def test_xor_sim_faster_than_naive_hamming_sim():
         naive_time += (stop - start)
     assert xor_time < naive_time
     print(naive_time, xor_time)
+
+
+def test_hamming_distance_zero_to_positive_one():
+
+    hashes = np.array([np.array([np.int64(0b0)]),
+                       np.array([np.int64(-0b1)])])
+    sim = hamming_sim_xor(hashes, [0, 1], 0)
+    assert (sim == [1.0, 0.0]).all()
+    sim = hamming_sim_xor(hashes, [0, 1], 1)
+    assert (sim == [0.0, 1.0]).all()

@@ -70,12 +70,14 @@ def transplant_bits(hashes, key, others, num_to_change, hash_len,
                     share=False):
     """ Share or unshare num_to_change bits from key -> others"""
     assert key not in others
-    int64_to_modify = np.random.randint(hash_len-1)
+    int64_to_modify = np.random.randint(hash_len)
 
     # Right shift will N to zero fill key hash
     # and force additional dissimilarity with comp_keys
-    shift_by = min(num_to_change, 61)
-    overlap_at = np.random.randint(62 - shift_by)
+    shift_by = min(num_to_change, 63)
+    if shift_by == 0:
+        return hashes
+    overlap_at = np.random.randint(64 - shift_by)
 
     # zero lower shift_by bits, set in others
     mask = -1 << shift_by
@@ -89,8 +91,8 @@ def transplant_bits(hashes, key, others, num_to_change, hash_len,
 
     print(f" Cng - {num_to_change} - share? {share}")
     print(f" Bef - Mask   {int64_to_modify} - {np.uint64(mask):064b}")
-    print(f" Bef - Hash 0,{int64_to_modify} - {np.uint64(hashes[0, int64_to_modify]):064b}")
-    print(f" Bef - Hash 1,{int64_to_modify} - {np.uint64(hashes[1, int64_to_modify]):064b}")
+    for i in range(0, 10):
+        print(f" Bef - Hash {i},{int64_to_modify} - {np.uint64(hashes[i, int64_to_modify]):064b}")
 
     others_before = hashes[others, int64_to_modify].copy()
     hashes[others, int64_to_modify] &= ~mask  # Clear shared bits
@@ -101,8 +103,8 @@ def transplant_bits(hashes, key, others, num_to_change, hash_len,
     hashes[others, int64_to_modify] |= to_assign
 
     print(f" Aft - Mask   {int64_to_modify} - {np.uint64(mask):064b}")
-    print(f" Aft - Hash 0,{int64_to_modify} - {np.uint64(hashes[0, int64_to_modify]):064b}")
-    print(f" Aft - Hash 1,{int64_to_modify} - {np.uint64(hashes[1, int64_to_modify]):064b}")
+    for i in range(0, 10):
+        print(f" Aft - Hash {i},{int64_to_modify} - {np.uint64(hashes[i, int64_to_modify]):064b}")
     print(f" Aft - Changes - {np.sum(others_before != hashes[others, int64_to_modify])}")
 
     return hashes
@@ -118,7 +120,7 @@ def share_bits(hashes, key, others, num_to_change, hash_len):
                            share=True)
 
 
-def train_one(hashes, vectors, key, hash_len, learn_rate=0.1):
+def train_one(hashes, vectors, key, hash_len, learn_rate=1.0):
     """ Modify hashes to be closer / farther from hashes[key] using 'vector'."""
     vect = vectors[key]
     # nn = exact_nearest_neighbors(vect, vectors, 100)
@@ -129,8 +131,8 @@ def train_one(hashes, vectors, key, hash_len, learn_rate=0.1):
     # dedup
     comp_keys = np.array(range(0, len(vectors)))
     comp_scores = (dotted + 1) / 2
-    assert (comp_scores <= 1.0).all()
-    assert (comp_scores >= 0.0).all()
+    assert (comp_scores <= 1.01).all()
+    assert (comp_scores >= -0.01).all()
     # for key, score in nn + fn + rn:
     #    if key not in comp_keys:
     #        comp_keys.append(key)
@@ -139,8 +141,9 @@ def train_one(hashes, vectors, key, hash_len, learn_rate=0.1):
     total_bits = (hash_len * 64)
     bit_sim = hamming_sim_xor(hashes, comp_keys, key)
     sim_diff = (comp_scores - bit_sim)
+    print(f" >>  CS - {comp_scores}")
+    print(f" >>  BS - {bit_sim}")
     print(f" >> SDF - {sim_diff}")
-    # import pdb; pdb.set_trace()
     bit_flips = np.int64(
         learn_rate * sim_diff * total_bits
     )
@@ -152,6 +155,8 @@ def train_one(hashes, vectors, key, hash_len, learn_rate=0.1):
     to_unshare = bit_flips[bit_flips < 0]
 
     print(f">> {bit_flips}")
+    if len(to_unshare) == 0 and len(to_share) == 0:
+        return hashes, True
 
     if len(to_unshare) > 0:
         num_to_unshare = -np.max(to_unshare)
@@ -192,7 +197,7 @@ def train_one(hashes, vectors, key, hash_len, learn_rate=0.1):
     top_n = sorted(hamming_sim_xor(hashes, comp_keys, key), reverse=True)[:10]
     # print(top_n)
 
-    return hashes
+    return hashes, False
 
 
 def train(vectors, learn_rate=0.1):
@@ -241,11 +246,12 @@ def run_lsh_scenario(rows, dims, hash_len, rounds, eval_at):
     last_recall = 0.0
     n = eval_at
     start = perf_counter()
+    rounds_took = 0
     for i in range(rounds):
         print("---")
         print(f"{i}")
         print(lsh_nearest_neighbors(hashes, 0, n=10))
-        hashes = train_one(hashes, vectors, 0, hash_len)
+        hashes, complete = train_one(hashes, vectors, 0, hash_len)
 
         top_n_lsh = lsh_nearest_neighbors(hashes, 0, n=n)
         top_n_nn = exact_nearest_neighbors(vectors[0], vectors, n=n)
@@ -258,6 +264,10 @@ def run_lsh_scenario(rows, dims, hash_len, rounds, eval_at):
         # assert delta_recall >= -0.1
         last_recall = recall
         print("---")
+
+        if complete:
+            rounds_took = i
+            break
     top_n_lsh = lsh_nearest_neighbors(hashes, 0, n=n)
     top_n_nn = exact_nearest_neighbors(vectors[0], vectors, n=n)
     recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
@@ -268,28 +278,32 @@ def run_lsh_scenario(rows, dims, hash_len, rounds, eval_at):
     exact = [(idx, (score + 1) / 2) for idx, score in exact]
     print(f" LS {lsh_nearest_neighbors(hashes, 0, n=10)}")
     print(f" GT {exact}")
-    return recall
+    return recall, rounds_took
 
 
-@pytest.mark.skip("LSH similarity is experimental")
 def test_lsh_one_medium_converges():
-    recall = run_lsh_scenario(rows=1000, dims=768,
-                              hash_len=16,
-                              rounds=10000, eval_at=10)
+    rounds = 10000
+    recall, rounds_took = run_lsh_scenario(rows=1000, dims=768,
+                                           hash_len=16,
+                                           rounds=rounds, eval_at=10)
     assert recall >= 0.9
+    assert rounds_took < rounds
 
 
 def test_lsh_one_small_converges():
-    recall = run_lsh_scenario(rows=100, dims=4, hash_len=16,
-                              rounds=10000, eval_at=2)
+    rounds = 10000
+    recall, rounds_took = run_lsh_scenario(rows=100, dims=4, hash_len=16,
+                                           rounds=rounds, eval_at=2)
+    assert rounds_took < rounds
     assert recall == 1.0
 
 
 def test_lsh_one_tiny_converges():
-
-    recall = run_lsh_scenario(rows=10, dims=4, hash_len=16,
-                              rounds=10000, eval_at=2)
+    rounds = 10000
+    recall, rounds_took = run_lsh_scenario(rows=10, dims=4, hash_len=16,
+                                           rounds=rounds, eval_at=2)
     assert recall == 1.0
+    assert rounds_took < rounds
 
 
 @pytest.mark.skip("LSH similarity is experimental")

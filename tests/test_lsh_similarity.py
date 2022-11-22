@@ -44,6 +44,11 @@ def jaccard_sim(hashes, comp_keys, key):
     return num_anded / num_ored
 
 
+def lsh_nearest_neighbors(hashes, key, n=10):
+    sim = hamming_sim_xor(hashes, slice(0, len(hashes)), key)
+    return get_top_n(sim, n=n)
+
+
 def hamming_sim_naive(hashes, comp_keys, key):
     """How identical are the bitmasks."""
     assert hashes.dtype == np.int64
@@ -89,8 +94,8 @@ def random_mask_of_n_bits(num_bits) -> np.int64:
 def transplant_bits(hashes: np.ndarray, src: int, dest: np.ndarray,
                     num_to_change: int, hash_to_modify: int,
                     share=False):
-    """ Share or unshare num_to_change bits from src -> dest in
-        hashes[dest, hash_to_modify]"""
+    """ Share or unshare num_to_change bits from src -> dest
+        in hashes."""
     assert src not in dest
 
     if num_to_change == 0:
@@ -101,23 +106,12 @@ def transplant_bits(hashes: np.ndarray, src: int, dest: np.ndarray,
     if num_to_change == 64:
         assert mask == -1
 
-    # print(f" Cng - {num_to_change} - share? {share}")
-    # print(f" Bef - Mask   {hash_to_modify} - {np.uint64(mask):064b}")
-    # for i in range(0, len(hashes)):
-    #     print(f" Bef - Hash {i},{hash_to_modify} - {np.uint64(hashes[i, hash_to_modify]):064b}") # noqa: E501
-
-    # dest_before = hashes[dest, hash_to_modify].copy()
     hashes[dest, hash_to_modify] &= ~mask  # Clear shared bits
     to_assign = mask & hashes[src, hash_to_modify]
     if not share:
         to_assign = mask & ~hashes[src, hash_to_modify]
 
     hashes[dest, hash_to_modify] |= to_assign
-
-    # print(f" Aft - Mask   {hash_to_modify} - {np.uint64(mask):064b}")
-    # for i in range(0, len(hashes)):
-    #     print(f" Aft - Hash {i},{hash_to_modify} - {np.uint64(hashes[i, hash_to_modify]):064b}")  # noqa: E501
-    # print(f" Aft - Changes - {np.sum(dest_before != hashes[dest, hash_to_modify])}")  # noqa: E501
 
     return hashes
 
@@ -139,6 +133,7 @@ def share_bits(hashes, src, dest, num_to_change, hash_len):
 def choose_flips(hashes, vectors, src, sim_floor, learn_rate):
     """Pick how many bits should be flipped in hashes to approximate
        cosine similarity."""
+    # These dot products could be cached
     vect = vectors[src]
     dotted = np.dot(vectors, vect)
 
@@ -227,11 +222,6 @@ def train_one(hashes, vectors, src, learn_rate=0.1, sim_floor=0.0):
     return hashes, False
 
 
-def lsh_nearest_neighbors(hashes, key, n=10):
-    sim = hamming_sim_xor(hashes, slice(0, len(hashes)), key)
-    return get_top_n(sim, n=n)
-
-
 def run_lsh_scenario(rows, dims, hash_len,
                      rounds, eval_at, train_keys=[0]):
     """Run lsh scenario with optimizing to a single target."""
@@ -247,8 +237,12 @@ def run_lsh_scenario(rows, dims, hash_len,
     n = eval_at
     start = perf_counter()
     rounds_took = 0
+    completes = [False] * len(train_keys)
     for i in range(rounds):
         key = train_keys[i % len(train_keys)]
+        if np.array(completes).all():
+            break
+
         try:
             sim_floor = sim_floors[key]
         except KeyError:
@@ -271,10 +265,9 @@ def run_lsh_scenario(rows, dims, hash_len,
         print(lsh_nearest_neighbors(hashes, key, n=10))
         last_recall = recall
         print("---")
+        completes[key] = complete
 
         rounds_took = i
-        if complete:
-            break
     print("FINAL")
     recalls = []
     for key in train_keys:
@@ -331,8 +324,6 @@ def test_lsh_one_tiny_converges():
 
 def test_lsh_two_small_converges():
     rounds = 1000
-    # Could we get multiple to converge if we just focus on
-    # Closest / Farthest?
     recalls, rounds_took = run_lsh_scenario(rows=100, dims=4, hash_len=16,
                                             rounds=rounds,
                                             eval_at=10,
@@ -340,6 +331,32 @@ def test_lsh_two_small_converges():
     # assert rounds_took < rounds
     assert recalls[0] >= 0.9
     assert recalls[1] >= 0.9
+
+
+def test_lsh_two_large_converges():
+    rounds = 1000
+    recalls, rounds_took = run_lsh_scenario(rows=100000,
+                                            dims=768,
+                                            hash_len=32,
+                                            rounds=rounds,
+                                            eval_at=10,
+                                            train_keys=[0, 1])
+    assert rounds_took < rounds
+    print(recalls)
+    assert recalls[0] >= 0.9
+    assert recalls[1] >= 0.9
+
+
+def test_lsh_ten_large_converges():
+    rounds = 2000
+    recalls, rounds_took = run_lsh_scenario(rows=100000,
+                                            dims=768,
+                                            hash_len=32,
+                                            rounds=rounds,
+                                            eval_at=10,
+                                            train_keys=list(range(0, 10)))
+    for recall in recalls:
+        assert recall >= 0.9
 
 
 def test_unshare_bits_makes_less_similar():

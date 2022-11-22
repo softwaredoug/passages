@@ -136,7 +136,7 @@ def share_bits(hashes, src, dest, num_to_change, hash_len):
                            share=True)
 
 
-def choose_flips(hashes, vectors, src, floor, learn_rate):
+def choose_flips(hashes, vectors, src, sim_floor, learn_rate):
     """Pick how many bits should be flipped in hashes to approximate
        cosine similarity."""
     vect = vectors[src]
@@ -161,21 +161,24 @@ def choose_flips(hashes, vectors, src, floor, learn_rate):
     # We don't care when the similarity is too far from the target,
     # in fact its pretty sub optimal to try to make these similarities
     # exact, because it uses up valuable information
-    dont_move_up = comp_scores < floor
+    dont_move_up = comp_scores < sim_floor
+    bit_flips[dont_move_up & (bit_sim < sim_floor)] = 0
 
-    bit_flips[dont_move_up & (bit_sim < floor)] = 0
     # Apply a learning rate, but with a floor of 1 bit flip
     bit_flips[bit_flips > 0] = np.ceil(learn_rate * bit_flips[bit_flips > 0])
     bit_flips[bit_flips < 0] = np.floor(learn_rate * bit_flips[bit_flips < 0])
+    print(f" >>  UP - {len(bit_flips[bit_flips > 0])}")
+    print(f" >>  DN - {len(bit_flips[bit_flips < 0])}")
     return bit_flips
 
 
-def train_one(hashes, vectors, src, learn_rate=0.1):
+def train_one(hashes, vectors, src, learn_rate=0.1, sim_floor=0.0):
     """ Modify hashes to be closer / farther from hashes[key] using
         'vector'."""
 
     comp_keys = np.array(range(0, len(vectors)))  # dup, cleanup
-    bit_flips = choose_flips(hashes, vectors, src, 0.0, learn_rate)
+    bit_flips = choose_flips(hashes, vectors, src,
+                             sim_floor, learn_rate)
     hash_len = hashes.shape[1]
 
     to_share = bit_flips[bit_flips > 0]
@@ -229,7 +232,8 @@ def lsh_nearest_neighbors(hashes, key, n=10):
     return get_top_n(sim, n=n)
 
 
-def run_lsh_scenario(rows, dims, hash_len, rounds, eval_at, train_keys=[0]):
+def run_lsh_scenario(rows, dims, hash_len,
+                     rounds, eval_at, train_keys=[0]):
     """Run lsh scenario with optimizing to a single target."""
     vectors = random_normed_matrix(rows, dims=dims)
     hashes = np.random.randint(INT64_MAX - 1,
@@ -237,16 +241,26 @@ def run_lsh_scenario(rows, dims, hash_len, rounds, eval_at, train_keys=[0]):
                                size=(len(vectors),
                                      hash_len))
 
+    sim_floors = {}
+
     last_recall = 0.0
     n = eval_at
     start = perf_counter()
     rounds_took = 0
     for i in range(rounds):
         key = train_keys[i % len(train_keys)]
+        try:
+            sim_floor = sim_floors[key]
+        except KeyError:
+            exact = exact_nearest_neighbors(vectors[key], vectors, n=10)
+            sim_floors[key] = (exact[-1][1] + 1) / 2
+            sim_floor = sim_floors[key]
+
         print("---")
-        print(f"{i} - {key}")
+        print(f"{i} - {key} - {sim_floor}")
         print(lsh_nearest_neighbors(hashes, key, n=10))
-        hashes, complete = train_one(hashes, vectors, key)
+        hashes, complete = train_one(hashes, vectors, key,
+                                     learn_rate=0.1, sim_floor=sim_floor)
 
         top_n_lsh = lsh_nearest_neighbors(hashes, key, n=n)
         top_n_nn = exact_nearest_neighbors(vectors[key], vectors, n=n)
@@ -487,7 +501,7 @@ def test_choose_flips_chooses_all_bits_with_learn_rate_1():
 
     src = 0
     bit_flips = choose_flips(hashes, vectors, src,
-                             floor=0.0, learn_rate=1.0)
+                             sim_floor=0.0, learn_rate=1.0)
     assert np.sum(np.abs(bit_flips)) == 128
 
 
@@ -502,7 +516,7 @@ def test_choose_flips_chooses_learn_rate_controlled_bits():
 
     src = 0
     bit_flips = choose_flips(hashes, vectors, src,
-                             floor=0.0, learn_rate=learn_rate)
+                             sim_floor=0.0, learn_rate=learn_rate)
     assert np.sum(np.abs(bit_flips)) < (128 * 0.3)
     assert np.sum(np.abs(bit_flips)) > (128 * 0.1)
 
@@ -520,7 +534,7 @@ def test_choose_flips_chooses_no_bits_if_identical():
 
     src = 0
     bit_flips = choose_flips(hashes, vectors, src,
-                             floor=0.0, learn_rate=1.0)
+                             sim_floor=0.0, learn_rate=1.0)
     assert np.sum(np.abs(bit_flips)) == 0
 
 
@@ -535,7 +549,7 @@ def test_choose_flips_doesnt_flip_when_cosine_below_floor():
 
     src = 0
     bit_flips = choose_flips(hashes, vectors, src,
-                             floor=0.9, learn_rate=1.0)
+                             sim_floor=0.9, learn_rate=1.0)
 
     assert bit_flips[0] == 0
     assert bit_flips[1] > 0
@@ -553,7 +567,7 @@ def test_choose_flips_when_hamming_above_floor():
 
     src = 0
     bit_flips = choose_flips(hashes, vectors, src,
-                             floor=0.9, learn_rate=1.0)
+                             sim_floor=0.9, learn_rate=1.0)
 
     assert bit_flips[0] == 0
     assert bit_flips[1] != 0

@@ -16,7 +16,6 @@ def get_top_n(dotted, n=100):
     n = min(n, dotted.shape[0])
     top_n = np.argpartition(-dotted, n-1)[:n]
     scores = dotted[top_n]
-
     return sorted(zip(top_n, scores),
                   key=lambda scored: scored[1],
                   reverse=True)
@@ -27,8 +26,6 @@ def exact_nearest_neighbors(query_vector: np.ndarray,
                             n=100):
     """ nth nearest neighbors as array
         with indices of nearest neighbors"""
-    start = perf_counter()
-
     dotted = np.dot(matrix, query_vector)
     # print(f">> Dot - {perf_counter() - start}")
     top_n = get_top_n(dotted, n=n)

@@ -1,8 +1,9 @@
 import numpy as np
+from typing import Mapping
 
 from similarity import exact_nearest_neighbors, \
     keys, get_top_n
-from hamming import hamming_sim, bit_count64
+from hamming import hamming_sim
 from time import perf_counter
 
 
@@ -73,16 +74,39 @@ def share_bits(hashes, src, dest, num_to_change, hash_len):
                            share=True)
 
 
-def choose_flips(hashes, vectors, src, sim_floor, learn_rate):
+class Vectors:
+
+    def __init__(self, vectors: np.ndarray):
+        self.vectors = vectors
+        self.dots: Mapping[int, np.ndarray] = {}
+
+    def dot(self, other: int):
+        """Dot prod all vectors with vector at other."""
+        # 109.07s user 28.94s system 378% cpu 36.421 total
+        # 66.09s user 18.39s system 287% cpu 29.429 total
+        try:
+            return self.dots[other]
+        except KeyError:
+            other_vect = self.vectors[other]
+            self.dots[other] = np.dot(self.vectors, other_vect)
+            return self.dots[other]
+
+    def __getitem__(self, idx):
+        return self.vectors[idx]
+
+    def as_numpy(self):
+        return self.vectors
+
+
+def choose_flips(hashes: np.ndarray,
+                 src_dotted: np.ndarray,
+                 src, sim_floor, learn_rate):
     """Pick how many bits should be flipped in hashes to approximate
        cosine similarity."""
     # These dot products could be cached
-    vect = vectors[src]
-    dotted = np.dot(vectors, vect)
-
     # dedup
-    comp_keys = np.array(range(0, len(vectors)))
-    comp_scores = (dotted + 1) / 2
+    comp_keys = np.array(range(0, len(hashes)))
+    comp_scores = (src_dotted + 1) / 2
     assert (comp_scores <= 1.01).all()
     assert (comp_scores >= -0.01).all()
 
@@ -90,9 +114,9 @@ def choose_flips(hashes, vectors, src, sim_floor, learn_rate):
     total_bits = (hash_len * 64)
     bit_sim = hamming_sim(hashes, comp_keys, src)
     sim_diff = (comp_scores - bit_sim)
-    print(f" >>  CS - {comp_scores}")
-    print(f" >>  BS - {bit_sim}")
-    print(f" >> SDF - {sim_diff}")
+    # print(f" >>  CS - {comp_scores}")
+    # print(f" >>  BS - {bit_sim}")
+    # print(f" >> SDF - {sim_diff}")
     bit_flips = np.int64(
         sim_diff * total_bits
     )
@@ -105,30 +129,29 @@ def choose_flips(hashes, vectors, src, sim_floor, learn_rate):
     # Apply a learning rate, but with a floor of 1 bit flip
     bit_flips[bit_flips > 0] = np.ceil(learn_rate * bit_flips[bit_flips > 0])
     bit_flips[bit_flips < 0] = np.floor(learn_rate * bit_flips[bit_flips < 0])
-    print(f" >>  UP - {len(bit_flips[bit_flips > 0])}")
-    print(f" >>  DN - {len(bit_flips[bit_flips < 0])}")
+    # print(f" >>  UP - {len(bit_flips[bit_flips > 0])}")
+    # print(f" >>  DN - {len(bit_flips[bit_flips < 0])}")
     return bit_flips
 
 
-def train_one(hashes, vectors, src, learn_rate=0.1, sim_floor=0.0):
+def train_one(hashes, src_dotted, src, learn_rate=0.1, sim_floor=0.0):
     """ Modify hashes to be closer / farther from hashes[key] using
         'vector'."""
 
-    comp_keys = np.array(range(0, len(vectors)))  # dup, cleanup
-    bit_flips = choose_flips(hashes, vectors, src,
+    comp_keys = np.array(range(0, len(hashes)))  # dup, cleanup
+    bit_flips = choose_flips(hashes, src_dotted, src,
                              sim_floor, learn_rate)
     hash_len = hashes.shape[1]
 
     to_share = bit_flips[bit_flips > 0]
     to_unshare = bit_flips[bit_flips < 0]
 
-    print(f">> {bit_flips}")
+    # print(f">> {bit_flips}")
     if len(to_unshare) == 0 and len(to_share) == 0:
         return hashes, True
 
     if len(to_unshare) > 0:
         num_to_unshare = -np.max(to_unshare)
-        num_to_unshare_min = -np.min(to_unshare)
         keys_to_unshare = comp_keys[bit_flips < 0]
         assert keys not in keys_to_unshare
         bit_sim_before = hamming_sim(hashes,
@@ -136,8 +159,8 @@ def train_one(hashes, vectors, src, learn_rate=0.1, sim_floor=0.0):
                                      src)
         assert num_to_unshare > 0
         # print("------------")
-        print(f">> {src} - Unsharing {num_to_unshare} bits "
-              f"/ {num_to_unshare_min}-{num_to_unshare} for {keys_to_unshare}")
+        # print(f">> {src} - Unsharing {num_to_unshare} bits "
+        #   f"/ {num_to_unshare_min}-{num_to_unshare} for {keys_to_unshare}")
         hashes = unshare_bits(hashes, src, keys_to_unshare,
                               num_to_unshare, hash_len)
         # print("------------")
@@ -153,7 +176,7 @@ def train_one(hashes, vectors, src, learn_rate=0.1, sim_floor=0.0):
         bit_sim_before = hamming_sim(hashes,
                                      keys_to_share,
                                      src)
-        print(f">> {src} -   Sharing {num_to_share} bits for {keys_to_share}")
+        # print(f">> {src} - Sharing {num_to_share} bits for {keys_to_share}")
         hashes = share_bits(hashes, src, keys_to_share,
                             num_to_share, hash_len)
         bit_sim_after = hamming_sim(hashes,
@@ -166,7 +189,7 @@ def train_one(hashes, vectors, src, learn_rate=0.1, sim_floor=0.0):
 
 
 def train(vectors, hash_len,
-          rounds, eval_at, train_keys=[0]):
+          rounds, eval_at, train_keys=[0], log_every=100):
     sim_floors = {}
     hashes = np.random.randint(INT64_MAX - 1,
                                dtype=np.int64,
@@ -178,6 +201,7 @@ def train(vectors, hash_len,
     start = perf_counter()
     rounds_took = 0
     completes = [False] * len(train_keys)
+    vectors = Vectors(vectors)
     for i in range(rounds):
         key = train_keys[i % len(train_keys)]
         if np.array(completes).all():
@@ -186,25 +210,33 @@ def train(vectors, hash_len,
         try:
             sim_floor = sim_floors[key]
         except KeyError:
-            exact = exact_nearest_neighbors(vectors[key], vectors, n=10)
+            exact = exact_nearest_neighbors(vectors[key],
+                                            vectors.as_numpy(),
+                                            n=10)
             sim_floors[key] = (exact[-1][1] + 1) / 2
             sim_floor = sim_floors[key]
 
-        print("---")
-        print(f"{i} - {key} - {sim_floor}")
-        print(lsh_nearest_neighbors(hashes, key, n=10))
-        hashes, complete = train_one(hashes, vectors, key,
+        if i % log_every == 0:
+            print("---")
+            print(f"{i} - {key} - {sim_floor}")
+            print(lsh_nearest_neighbors(hashes, key, n=10))
+
+        key_dotted = vectors.dot(key)
+        hashes, complete = train_one(hashes, key_dotted, key,
                                      learn_rate=0.1, sim_floor=sim_floor)
 
-        top_n_lsh = lsh_nearest_neighbors(hashes, key, n=n)
-        top_n_nn = exact_nearest_neighbors(vectors[key], vectors, n=n)
-        recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
-        delta_recall = recall - last_recall
-        print(f"RECALL@{eval_at} - {recall}, {delta_recall}")
-        print(f"  PERF   - {perf_counter() - start}")
-        print(lsh_nearest_neighbors(hashes, key, n=10))
-        last_recall = recall
-        print("---")
+        if i % log_every == 0:
+            top_n_lsh = lsh_nearest_neighbors(hashes, key, n=n)
+            top_n_nn = exact_nearest_neighbors(vectors[key],
+                                               vectors.as_numpy(),
+                                               n=10)
+            recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
+            delta_recall = recall - last_recall
+            print(f"RECALL@{eval_at} - {recall}, {delta_recall}")
+            print(f"  PERF   - {perf_counter() - start}")
+            print(lsh_nearest_neighbors(hashes, key, n=10))
+            last_recall = recall
+            print("---")
         completes[key] = complete
 
         rounds_took = i
@@ -212,12 +244,13 @@ def train(vectors, hash_len,
     recalls = []
     for key in train_keys:
         top_n_lsh = lsh_nearest_neighbors(hashes, key, n=n)
-        top_n_nn = exact_nearest_neighbors(vectors[key], vectors, n=n)
+        top_n_nn = exact_nearest_neighbors(vectors[key],
+                                           vectors.as_numpy(),
+                                           n=n)
         recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
         print(f"RECALL@{eval_at} - {recall}")
         recalls.append(recall)
-        exact = exact_nearest_neighbors(vectors[key], vectors, n=10)
-        exact = [(idx, (score + 1) / 2) for idx, score in exact]
+        exact = [(idx, (score + 1) / 2) for idx, score in top_n_nn]
         print(f" LS {lsh_nearest_neighbors(hashes, key, n=10)}")
         print(f" GT {exact}")
     print(f"  PERF   - {perf_counter() - start}")

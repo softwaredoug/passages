@@ -1,5 +1,6 @@
 import numpy as np
 from time import perf_counter
+import random
 
 from utils import random_normed_matrix
 from similarity import exact_nearest_neighbors
@@ -12,8 +13,11 @@ INT64_MAX = np.iinfo(np.int64).max
 
 
 def run_lsh_scenario(rows, dims, hash_len,
-                     rounds, eval_at, train_keys=[0]):
+                     rounds, eval_at, train_keys=[0],
+                     seed=0):
     """Run lsh scenario with optimizing to a single target."""
+    np.random.seed(seed)
+    random.seed(seed)
     vectors = random_normed_matrix(rows, dims=dims)
 
     hashes, recalls, rounds_took =\
@@ -206,7 +210,8 @@ def test_choose_flips_chooses_all_bits_with_learn_rate_1():
                        np.array([np.int64(-1), np.int64(-1)])])
 
     src = 0
-    bit_flips = choose_flips(hashes, vectors, src,
+    src_dotted = np.dot(vectors, vectors[src])
+    bit_flips = choose_flips(hashes, src_dotted, src,
                              sim_floor=0.0, learn_rate=1.0)
     assert np.sum(np.abs(bit_flips)) == 128
 
@@ -221,7 +226,8 @@ def test_choose_flips_chooses_learn_rate_controlled_bits():
                        np.array([np.int64(-1), np.int64(-1)])])
 
     src = 0
-    bit_flips = choose_flips(hashes, vectors, src,
+    src_dotted = np.dot(vectors, vectors[src])
+    bit_flips = choose_flips(hashes, src_dotted, src,
                              sim_floor=0.0, learn_rate=learn_rate)
     assert np.sum(np.abs(bit_flips)) < (128 * 0.3)
     assert np.sum(np.abs(bit_flips)) > (128 * 0.1)
@@ -239,7 +245,8 @@ def test_choose_flips_chooses_no_bits_if_identical():
     np.testing.assert_allclose(hamming, cosine, rtol=0.001)
 
     src = 0
-    bit_flips = choose_flips(hashes, vectors, src,
+    src_dotted = np.dot(vectors, vectors[src])
+    bit_flips = choose_flips(hashes, src_dotted, src,
                              sim_floor=0.0, learn_rate=1.0)
     assert np.sum(np.abs(bit_flips)) == 0
 
@@ -254,7 +261,8 @@ def test_choose_flips_doesnt_flip_when_cosine_below_floor():
                        np.array([np.int64(-1), np.int64(0)])])
 
     src = 0
-    bit_flips = choose_flips(hashes, vectors, src,
+    src_dotted = np.dot(vectors, vectors[src])
+    bit_flips = choose_flips(hashes, src_dotted, src,
                              sim_floor=0.9, learn_rate=1.0)
 
     assert bit_flips[0] == 0
@@ -272,7 +280,8 @@ def test_choose_flips_when_hamming_above_floor():
                        np.array([np.int64(1), np.int64(1)])])
 
     src = 0
-    bit_flips = choose_flips(hashes, vectors, src,
+    src_dotted = np.dot(vectors, vectors[src])
+    bit_flips = choose_flips(hashes, src_dotted, src,
                              sim_floor=0.9, learn_rate=1.0)
 
     assert bit_flips[0] == 0

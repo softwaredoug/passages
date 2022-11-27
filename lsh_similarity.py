@@ -2,8 +2,7 @@ import numpy as np
 import numpy.typing as npt
 from typing import Dict, Optional
 
-from similarity import exact_nearest_neighbors, \
-    keys, get_top_n
+from similarity import keys, get_top_n
 from rand_proj_similarity import train as train_rand_proj, create_projections
 from hamming import hamming_sim
 from time import perf_counter
@@ -79,7 +78,7 @@ def share_bits(hashes, src, dest, num_to_change, hash_len):
                            share=True)
 
 
-class Vectors:
+class ExactVectors:
 
     def __init__(self, vectors: np.ndarray):
         self.vectors: np.ndarray = vectors
@@ -96,6 +95,11 @@ class Vectors:
             dots = np.dot(self.vectors, other_vect)
             self.dots[other] = dots
             return self.dots[other]
+
+    def nearest_neighbors(self, other: int, n=10):
+        """Get top n exact nearest neighbors."""
+        dotted = self.dot(other)
+        return get_top_n(dotted, n=n)
 
     def __getitem__(self, idx):
         return self.vectors[idx]
@@ -234,7 +238,7 @@ class LshSimilarity:
         start = perf_counter()
         rounds_took = 0
         completes = [False] * len(train_keys)
-        vectors = Vectors(vectors)
+        vectors = ExactVectors(vectors)
         for i in range(rounds):
             key = train_keys[i % len(train_keys)]
             if np.array(completes).all():
@@ -243,9 +247,7 @@ class LshSimilarity:
             try:
                 sim_floor = sim_floors[key]
             except KeyError:
-                exact = exact_nearest_neighbors(vectors[key],
-                                                vectors.as_numpy(),
-                                                n=10)
+                exact = vectors.nearest_neighbors(key, n=10)
                 sim_floors[key] = (exact[-1][1] + 1) / 2
                 sim_floor = sim_floors[key]
 
@@ -261,9 +263,7 @@ class LshSimilarity:
 
             if i % log_every == 0:
                 top_n_lsh = lsh_nearest_neighbors(self.hashes, key, n=n)
-                top_n_nn = exact_nearest_neighbors(vectors[key],
-                                                   vectors.as_numpy(),
-                                                   n=10)
+                top_n_nn = vectors.nearest_neighbors(key, n=10)
                 recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
                 delta_recall = recall - last_recall
                 print(f"RECALL@{eval_at} - {recall}, {delta_recall}")
@@ -278,9 +278,7 @@ class LshSimilarity:
         recalls = []
         for key in train_keys:
             top_n_lsh = lsh_nearest_neighbors(self.hashes, key, n=n)
-            top_n_nn = exact_nearest_neighbors(vectors[key],
-                                               vectors.as_numpy(),
-                                               n=n)
+            top_n_nn = vectors.nearest_neighbors(key, n=10)
             recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
             print(f"RECALL@{eval_at} - {recall}")
             recalls.append(recall)
@@ -289,3 +287,6 @@ class LshSimilarity:
             print(f" GT {exact}")
         print(f"  PERF   - {perf_counter() - start}")
         return self.hashes, recalls, rounds_took + 1
+
+    def query(self, key: int, n=10):
+        return lsh_nearest_neighbors(self.hashes, key, n=n)

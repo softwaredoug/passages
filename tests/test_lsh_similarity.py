@@ -6,7 +6,8 @@ from utils import random_normed_matrix
 from similarity import exact_nearest_neighbors
 from hamming import hamming_sim, bit_count64
 from lsh_similarity import lsh_nearest_neighbors, LshSimilarity, \
-    unshare_bits, transplant_bits, choose_flips, random_mask_of_n_bits
+    unshare_bits, transplant_bits, choose_flips, random_mask_of_n_bits, \
+    to_01_scale
 
 
 INT64_MAX = np.iinfo(np.int64).max
@@ -46,6 +47,26 @@ def test_lsh_one_medium_converges():
     recall = recalls[0]
     assert recall >= 0.9
     assert rounds_took < rounds
+
+
+def test_lsh_one_medium_converges_faster_with_projections():
+    rounds = 10000
+    recalls, rounds_took = run_lsh_scenario(rows=1000, dims=768,
+                                            hash_len=16,
+                                            rounds=rounds,
+                                            eval_at=10,
+                                            projections=False)
+    recall = recalls[0]
+    assert recall >= 0.9
+    assert rounds_took < rounds
+    rounds_took_no_projections = rounds_took
+
+    recalls, rounds_took = run_lsh_scenario(rows=1000, dims=768,
+                                            hash_len=16,
+                                            rounds=rounds,
+                                            eval_at=10,
+                                            projections=True)
+    assert rounds_took < rounds_took_no_projections
 
 
 def test_lsh_one_small_converges():
@@ -213,7 +234,7 @@ def test_choose_flips_chooses_all_bits_with_learn_rate_1():
                        np.array([np.int64(-1), np.int64(-1)])])
 
     src = 0
-    src_dotted = np.dot(vectors, vectors[src])
+    src_dotted = to_01_scale(np.dot(vectors, vectors[src]))
     bit_flips = choose_flips(hashes, src_dotted, src,
                              lsh_floor=0.0, learn_rate=1.0)
     assert np.sum(np.abs(bit_flips)) == 128
@@ -229,7 +250,7 @@ def test_choose_flips_chooses_learn_rate_controlled_bits():
                        np.array([np.int64(-1), np.int64(-1)])])
 
     src = 0
-    src_dotted = np.dot(vectors, vectors[src])
+    src_dotted = to_01_scale(np.dot(vectors, vectors[src]))
     bit_flips = choose_flips(hashes, src_dotted, src,
                              lsh_floor=0.0, learn_rate=learn_rate)
     assert np.sum(np.abs(bit_flips)) < (128 * 0.3)
@@ -248,7 +269,7 @@ def test_choose_flips_chooses_no_bits_if_identical():
     np.testing.assert_allclose(hamming, cosine, rtol=0.001)
 
     src = 0
-    src_dotted = np.dot(vectors, vectors[src])
+    src_dotted = to_01_scale(np.dot(vectors, vectors[src]))
     bit_flips = choose_flips(hashes, src_dotted, src,
                              lsh_floor=0.0, learn_rate=1.0)
     assert np.sum(np.abs(bit_flips)) == 0
@@ -264,7 +285,7 @@ def test_choose_flips_doesnt_flip_when_cosine_below_floor():
                        np.array([np.int64(-1), np.int64(0)])])
 
     src = 0
-    src_dotted = np.dot(vectors, vectors[src])
+    src_dotted = to_01_scale(np.dot(vectors, vectors[src]))
     bit_flips = choose_flips(hashes, src_dotted, src,
                              lsh_floor=0.9, learn_rate=1.0)
 
@@ -283,7 +304,7 @@ def test_choose_flips_when_hamming_above_floor():
                        np.array([np.int64(1), np.int64(1)])])
 
     src = 0
-    src_dotted = np.dot(vectors, vectors[src])
+    src_dotted = to_01_scale(np.dot(vectors, vectors[src]))
     bit_flips = choose_flips(hashes, src_dotted, src,
                              lsh_floor=0.9, learn_rate=1.0)
 

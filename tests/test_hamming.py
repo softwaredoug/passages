@@ -1,7 +1,7 @@
 import numpy as np
 from time import perf_counter
 
-from hamming import hamming_sim, hamming_sim_naive
+from hamming import hamming_sim, hamming_sim_naive, bit_count64
 
 INT64_MAX = np.iinfo(np.int64).max
 
@@ -53,3 +53,22 @@ def test_hamming_distance_zero_to_positive_one():
     assert (sim == [1.0, 0.0]).all()
     sim = hamming_sim(hashes, [0, 1], 1)
     assert (sim == [0.0, 1.0]).all()
+
+
+def test_bitcount_ones():
+    hashes = np.array([np.int64(0b1),
+                       np.int64(0b1)])
+    bc = bit_count64(hashes)
+    assert (bc == np.array([1, 1])).all()
+
+
+def test_bitcount_big_uint():    # bits 0444444423233401
+    hashes = np.array([np.int64(0x0fffffffabcdef01)])
+    bc = bit_count64(hashes)
+    assert (bc == np.array([46])).all()
+
+
+def test_bitcount_negative_one():
+    hashes = np.array([np.int64(-0b1)])
+    bc = bit_count64(hashes)
+    assert (bc == np.array([64])).all()

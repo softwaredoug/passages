@@ -215,7 +215,7 @@ def test_choose_flips_chooses_all_bits_with_learn_rate_1():
     src = 0
     src_dotted = np.dot(vectors, vectors[src])
     bit_flips = choose_flips(hashes, src_dotted, src,
-                             sim_floor=0.0, learn_rate=1.0)
+                             lsh_floor=0.0, learn_rate=1.0)
     assert np.sum(np.abs(bit_flips)) == 128
 
 
@@ -231,7 +231,7 @@ def test_choose_flips_chooses_learn_rate_controlled_bits():
     src = 0
     src_dotted = np.dot(vectors, vectors[src])
     bit_flips = choose_flips(hashes, src_dotted, src,
-                             sim_floor=0.0, learn_rate=learn_rate)
+                             lsh_floor=0.0, learn_rate=learn_rate)
     assert np.sum(np.abs(bit_flips)) < (128 * 0.3)
     assert np.sum(np.abs(bit_flips)) > (128 * 0.1)
 
@@ -250,7 +250,7 @@ def test_choose_flips_chooses_no_bits_if_identical():
     src = 0
     src_dotted = np.dot(vectors, vectors[src])
     bit_flips = choose_flips(hashes, src_dotted, src,
-                             sim_floor=0.0, learn_rate=1.0)
+                             lsh_floor=0.0, learn_rate=1.0)
     assert np.sum(np.abs(bit_flips)) == 0
 
 
@@ -266,7 +266,7 @@ def test_choose_flips_doesnt_flip_when_cosine_below_floor():
     src = 0
     src_dotted = np.dot(vectors, vectors[src])
     bit_flips = choose_flips(hashes, src_dotted, src,
-                             sim_floor=0.9, learn_rate=1.0)
+                             lsh_floor=0.9, learn_rate=1.0)
 
     assert bit_flips[0] == 0
     assert bit_flips[1] > 0
@@ -285,7 +285,7 @@ def test_choose_flips_when_hamming_above_floor():
     src = 0
     src_dotted = np.dot(vectors, vectors[src])
     bit_flips = choose_flips(hashes, src_dotted, src,
-                             sim_floor=0.9, learn_rate=1.0)
+                             lsh_floor=0.9, learn_rate=1.0)
 
     assert bit_flips[0] == 0
     assert bit_flips[1] != 0

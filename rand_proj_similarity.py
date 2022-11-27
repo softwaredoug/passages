@@ -1,9 +1,11 @@
 import random
 import numpy as np
+import numpy.typing as npt
 from random_projection import projection_between
 
 
-def create_projections(vectors, num_projections):
+def create_projections(vectors: npt.NDArray[np.float64],
+                       num_projections: int) -> npt.NDArray[np.float64]:
     projections = []
     for idx in range(num_projections):
         projection_found = False
@@ -22,7 +24,7 @@ def create_projections(vectors, num_projections):
                     projection_found = True
                 except ValueError:
                     projection_found = False
-    return projections
+    return np.array(projections)
 
 
 def set_bit(one_hash, idx):
@@ -40,11 +42,9 @@ def clear_bit(one_hash, idx):
     return one_hash
 
 
-def train(hashes, vectors):
-    hash_len = hashes.shape[1]
-    num_projections = hash_len * 64
-
-    projections = create_projections(vectors, num_projections)
+def train(hashes: npt.NDArray[np.int64],
+          projections: npt.NDArray[np.float64],
+          vectors: npt.NDArray[np.float64]) -> npt.NDArray[np.int64]:
 
     for vect_idx, vect in enumerate(vectors):
         for bit_idx, proj in enumerate(projections):

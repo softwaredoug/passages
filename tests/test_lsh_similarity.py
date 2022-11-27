@@ -5,7 +5,7 @@ import random
 from utils import random_normed_matrix
 from similarity import exact_nearest_neighbors
 from hamming import hamming_sim, bit_count64
-from lsh_similarity import lsh_nearest_neighbors, train, \
+from lsh_similarity import lsh_nearest_neighbors, LshSimilarity, \
     unshare_bits, transplant_bits, choose_flips, random_mask_of_n_bits
 
 
@@ -14,14 +14,17 @@ INT64_MAX = np.iinfo(np.int64).max
 
 def run_lsh_scenario(rows, dims, hash_len,
                      rounds, eval_at, train_keys=[0],
+                     projections=False,
                      seed=0):
     """Run lsh scenario with optimizing to a single target."""
     np.random.seed(seed)
     random.seed(seed)
     vectors = random_normed_matrix(rows, dims=dims)
 
+    sim = LshSimilarity(hash_len, projections=projections)
+
     hashes, recalls, rounds_took =\
-        train(vectors, hash_len, rounds, eval_at, train_keys)
+        sim.train(vectors, rounds, eval_at, train_keys)
     return recalls, rounds_took + 1
 
 

@@ -1,9 +1,10 @@
 import numpy as np
-from typing import Dict
+import numpy.typing as npt
+from typing import Dict, Optional
 
 from similarity import exact_nearest_neighbors, \
     keys, get_top_n
-from rand_proj_similarity import train as train_rand_proj
+from rand_proj_similarity import train as train_rand_proj, create_projections
 from hamming import hamming_sim
 from time import perf_counter
 
@@ -16,9 +17,9 @@ def lsh_nearest_neighbors(hashes, key, n=10):
     return get_top_n(sim, n=n)
 
 
-def random_mask_of_n_bits(num_bits) -> np.int64:
+def random_mask_of_n_bits(num_bits: np.int64) -> np.int64:
     """Random mask up to 64 bits long."""
-    shift_by = min(num_bits, 64)
+    shift_by = np.min([num_bits, 64])
     overlap_at = np.random.randint(65 - shift_by)
 
     # zero lower shift_by bits, set in dest
@@ -36,8 +37,11 @@ def random_mask_of_n_bits(num_bits) -> np.int64:
     return mask
 
 
-def transplant_bits(hashes: np.ndarray, src: int, dest: np.ndarray,
-                    num_to_change: int, hash_to_modify: int,
+def transplant_bits(hashes: npt.NDArray[np.int64],
+                    src: int,
+                    dest: npt.NDArray[np.int64],
+                    num_to_change: np.int64,
+                    hash_to_modify: int,
                     share=False):
     """ Share or unshare num_to_change bits from src -> dest
         in hashes."""
@@ -188,82 +192,100 @@ def train_one(hashes, src_dotted, src, learn_rate=0.1, sim_floor=0.0):
     return hashes, False
 
 
-def init_hashes(vectors: np.ndarray, hash_len: int, initialize) -> np.ndarray:
-    if initialize == 'random':
-        return np.random.randint(INT64_MAX - 1,
-                                 dtype=np.int64,
-                                 size=(len(vectors),
-                                       hash_len))
-    elif initialize == 'projections':
-        hashes = np.zeros(dtype=np.int64,
-                          shape=(len(vectors),
-                                 hash_len))
-        return train_rand_proj(hashes, vectors)
-    else:
-        raise ValueError(f"Init method {initialize} not supported")
+class LshSimilarity:
 
+    def __init__(self, hash_len: int, projections: bool = True):
+        self.project_on_train = projections
+        self.projections: Optional[npt.NDArray[np.float64]] = None
+        self.hashes = None
+        self.hash_len = hash_len
 
-def train(vectors, hash_len,
-          rounds, eval_at, train_keys=[0], log_every=100,
-          initialize='random'):
-    sim_floors = {}
-    last_recall = 0.0
-    n = eval_at
-    hashes = init_hashes(vectors, hash_len, initialize)
-    start = perf_counter()
-    rounds_took = 0
-    completes = [False] * len(train_keys)
-    vectors = Vectors(vectors)
-    for i in range(rounds):
-        key = train_keys[i % len(train_keys)]
-        if np.array(completes).all():
-            break
+    def _init_hashes(self,
+                     vectors: npt.NDArray[np.float64]) \
+            -> npt.NDArray[np.int64]:
 
-        try:
-            sim_floor = sim_floors[key]
-        except KeyError:
-            exact = exact_nearest_neighbors(vectors[key],
-                                            vectors.as_numpy(),
-                                            n=10)
-            sim_floors[key] = (exact[-1][1] + 1) / 2
-            sim_floor = sim_floors[key]
+        if self.project_on_train:
+            start = perf_counter()
+            print("Training Projections")
+            hashes = np.zeros(dtype=np.int64,
+                              shape=(len(vectors),
+                                     self.hash_len))
+            hash_len = hashes.shape[1]
+            num_projections = hash_len * 64
 
-        if i % log_every == 0:
-            print("---")
-            print(f"{i} - {key} - {sim_floor}")
-            print(lsh_nearest_neighbors(hashes, key, n=10))
+            if self.projections is None:
+                self.projections = create_projections(vectors, num_projections)
 
-        key_dotted = vectors.dot(key)
-        hashes, complete = train_one(hashes, key_dotted, key,
-                                     learn_rate=0.1, sim_floor=sim_floor)
+            hashes = train_rand_proj(hashes, self.projections, vectors)
+            print(f"Projections Done {perf_counter() - start}")
+            return hashes
+        else:
+            return np.random.randint(INT64_MAX - 1,
+                                     dtype=np.int64,
+                                     size=(len(vectors),
+                                           self.hash_len))
 
-        if i % log_every == 0:
-            top_n_lsh = lsh_nearest_neighbors(hashes, key, n=n)
+    def train(self, vectors,
+              rounds, eval_at, train_keys=[0], log_every=100):
+        sim_floors = {}
+        last_recall = 0.0
+        n = eval_at
+        self.hashes = self._init_hashes(vectors)
+        start = perf_counter()
+        rounds_took = 0
+        completes = [False] * len(train_keys)
+        vectors = Vectors(vectors)
+        for i in range(rounds):
+            key = train_keys[i % len(train_keys)]
+            if np.array(completes).all():
+                break
+
+            try:
+                sim_floor = sim_floors[key]
+            except KeyError:
+                exact = exact_nearest_neighbors(vectors[key],
+                                                vectors.as_numpy(),
+                                                n=10)
+                sim_floors[key] = (exact[-1][1] + 1) / 2
+                sim_floor = sim_floors[key]
+
+            if i % log_every == 0:
+                print("---")
+                print(f"{i} - {key} - {sim_floor}")
+                print(lsh_nearest_neighbors(self.hashes, key, n=10))
+
+            key_dotted = vectors.dot(key)
+            self.hashes, complete = train_one(self.hashes, key_dotted, key,
+                                              learn_rate=0.1,
+                                              sim_floor=sim_floor)
+
+            if i % log_every == 0:
+                top_n_lsh = lsh_nearest_neighbors(self.hashes, key, n=n)
+                top_n_nn = exact_nearest_neighbors(vectors[key],
+                                                   vectors.as_numpy(),
+                                                   n=10)
+                recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
+                delta_recall = recall - last_recall
+                print(f"RECALL@{eval_at} - {recall}, {delta_recall}")
+                print(f"  PERF   - {perf_counter() - start}")
+                print(lsh_nearest_neighbors(self.hashes, key, n=10))
+                last_recall = recall
+                print("---")
+            completes[key] = complete
+
+            rounds_took = i
+        print("FINAL")
+        recalls = []
+        for key in train_keys:
+            top_n_lsh = lsh_nearest_neighbors(self.hashes, key, n=n)
             top_n_nn = exact_nearest_neighbors(vectors[key],
                                                vectors.as_numpy(),
-                                               n=10)
+                                               n=n)
             recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
-            delta_recall = recall - last_recall
-            print(f"RECALL@{eval_at} - {recall}, {delta_recall}")
-            print(f"  PERF   - {perf_counter() - start}")
-            print(lsh_nearest_neighbors(hashes, key, n=10))
-            last_recall = recall
-            print("---")
-        completes[key] = complete
-
-        rounds_took = i
-    print("FINAL")
-    recalls = []
-    for key in train_keys:
-        top_n_lsh = lsh_nearest_neighbors(hashes, key, n=n)
-        top_n_nn = exact_nearest_neighbors(vectors[key],
-                                           vectors.as_numpy(),
-                                           n=n)
-        recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
-        print(f"RECALL@{eval_at} - {recall}")
-        recalls.append(recall)
-        exact = [(idx, (score + 1) / 2) for idx, score in top_n_nn]
-        print(f" LS {lsh_nearest_neighbors(hashes, key, n=10)}")
-        print(f" GT {exact}")
-    print(f"  PERF   - {perf_counter() - start}")
-    return hashes, recalls, rounds_took + 1
+            print(f"RECALL@{eval_at} - {recall}")
+            recalls.append(recall)
+            exact = [(idx, (score + 1) / 2) for idx, score in top_n_nn]
+            print(f" LS {lsh_nearest_neighbors(self.hashes, key, n=10)}")
+            print(f" GT {exact}")
+        print(f"  PERF   - {perf_counter() - start}")
+        return self.hashes, recalls, rounds_took + 1

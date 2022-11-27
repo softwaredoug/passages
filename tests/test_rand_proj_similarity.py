@@ -1,7 +1,7 @@
 import numpy as np
 import random
 
-from rand_proj_similarity import train
+from rand_proj_similarity import train, create_projections
 from utils import random_normed_matrix
 from similarity import exact_nearest_neighbors, keys
 from lsh_similarity import lsh_nearest_neighbors
@@ -31,7 +31,9 @@ def test_rand_projection_works_ok_in_very_low_dims():
     hashes = np.zeros(dtype=np.int64,
                       shape=(rows, hash_len))
     vectors = random_normed_matrix(rows, dims=dims)
-    train(hashes, vectors)
+    num_projections = hash_len * 64
+    projections = create_projections(vectors, num_projections)
+    train(hashes, projections, vectors)
 
     n = 100
     print("Trained")
@@ -52,7 +54,10 @@ def test_rand_projection_works_ok_in_low_dims():
     hashes = np.zeros(dtype=np.int64,
                       shape=(rows, hash_len))
     vectors = random_normed_matrix(rows, dims=dims)
-    train(hashes, vectors)
+
+    num_projections = hash_len * 64
+    projections = create_projections(vectors, num_projections)
+    train(hashes, projections, vectors)
     print("Trained")
 
     n = 100

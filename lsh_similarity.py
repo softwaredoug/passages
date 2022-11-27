@@ -3,6 +3,7 @@ from typing import Dict
 
 from similarity import exact_nearest_neighbors, \
     keys, get_top_n
+from rand_proj_similarity import train as train_rand_proj
 from hamming import hamming_sim
 from time import perf_counter
 
@@ -187,16 +188,28 @@ def train_one(hashes, src_dotted, src, learn_rate=0.1, sim_floor=0.0):
     return hashes, False
 
 
-def train(vectors, hash_len,
-          rounds, eval_at, train_keys=[0], log_every=100):
-    sim_floors = {}
-    hashes = np.random.randint(INT64_MAX - 1,
-                               dtype=np.int64,
-                               size=(len(vectors),
-                                     hash_len))
+def init_hashes(vectors: np.ndarray, hash_len: int, initialize) -> np.ndarray:
+    if initialize == 'random':
+        return np.random.randint(INT64_MAX - 1,
+                                 dtype=np.int64,
+                                 size=(len(vectors),
+                                       hash_len))
+    elif initialize == 'projections':
+        hashes = np.zeros(dtype=np.int64,
+                          shape=(len(vectors),
+                                 hash_len))
+        return train_rand_proj(hashes, vectors)
+    else:
+        raise ValueError(f"Init method {initialize} not supported")
 
+
+def train(vectors, hash_len,
+          rounds, eval_at, train_keys=[0], log_every=100,
+          initialize='random'):
+    sim_floors = {}
     last_recall = 0.0
     n = eval_at
+    hashes = init_hashes(vectors, hash_len, initialize)
     start = perf_counter()
     rounds_took = 0
     completes = [False] * len(train_keys)

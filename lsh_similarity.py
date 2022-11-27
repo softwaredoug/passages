@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Mapping
+from typing import Dict
 
 from similarity import exact_nearest_neighbors, \
     keys, get_top_n
@@ -77,8 +77,8 @@ def share_bits(hashes, src, dest, num_to_change, hash_len):
 class Vectors:
 
     def __init__(self, vectors: np.ndarray):
-        self.vectors = vectors
-        self.dots: Mapping[int, np.ndarray] = {}
+        self.vectors: np.ndarray = vectors
+        self.dots: Dict[int, np.ndarray] = {}
 
     def dot(self, other: int):
         """Dot prod all vectors with vector at other."""
@@ -88,7 +88,8 @@ class Vectors:
             return self.dots[other]
         except KeyError:
             other_vect = self.vectors[other]
-            self.dots[other] = np.dot(self.vectors, other_vect)
+            dots = np.dot(self.vectors, other_vect)
+            self.dots[other] = dots
             return self.dots[other]
 
     def __getitem__(self, idx):
@@ -117,9 +118,7 @@ def choose_flips(hashes: np.ndarray,
     # print(f" >>  CS - {comp_scores}")
     # print(f" >>  BS - {bit_sim}")
     # print(f" >> SDF - {sim_diff}")
-    bit_flips = np.int64(
-        sim_diff * total_bits
-    )
+    bit_flips = (sim_diff * total_bits).astype(np.int64)
     # We don't care when the similarity is too far from the target,
     # in fact its pretty sub optimal to try to make these similarities
     # exact, because it uses up valuable information

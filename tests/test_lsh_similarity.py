@@ -25,7 +25,7 @@ def run_lsh_scenario(rows, dims, hash_len,
     sim = LshSimilarity(hash_len, projections=projections)
 
     hashes, recalls, rounds_took =\
-        sim.train(vectors, rounds, eval_at, train_keys)
+        sim.train(vectors, rounds, train_keys, n=eval_at)
     return recalls, rounds_took + 1
 
 
@@ -51,21 +51,25 @@ def test_lsh_one_medium_converges():
 
 def test_lsh_one_medium_converges_faster_with_projections():
     rounds = 10000
+    start = perf_counter()
     recalls, rounds_took = run_lsh_scenario(rows=1000, dims=768,
                                             hash_len=16,
                                             rounds=rounds,
                                             eval_at=10,
                                             projections=False)
+    print(f"NoProj - {perf_counter() - start}")
     recall = recalls[0]
     assert recall >= 0.9
     assert rounds_took < rounds
     rounds_took_no_projections = rounds_took
 
+    start = perf_counter()
     recalls, rounds_took = run_lsh_scenario(rows=1000, dims=768,
                                             hash_len=16,
                                             rounds=rounds,
                                             eval_at=10,
                                             projections=True)
+    print(f"  Proj - {perf_counter() - start}")
     assert rounds_took < rounds_took_no_projections
 
 

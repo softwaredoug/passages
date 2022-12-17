@@ -55,6 +55,17 @@ def test_hamming_distance_zero_to_positive_one():
     assert (sim == [0.0, 1.0]).all()
 
 
+def test_hamming_distance_same_twice():
+
+    hashes = np.array([np.array([np.int64(-0b1111)]),
+                       np.array([np.int64(0b0111)])])
+    hashes_before = hashes.copy()
+    sim_before = hamming_sim(hashes, [0, 1], 0)
+    sim_after = hamming_sim(hashes, [0, 1], 0)
+    assert (sim_before == sim_after).all()
+    assert (hashes == hashes_before).all()
+
+
 def test_bitcount_ones():
     hashes = np.array([np.int64(0b1),
                        np.int64(0b1)])

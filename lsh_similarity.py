@@ -2,7 +2,7 @@ import numpy as np
 import numpy.typing as npt
 from typing import Dict, Optional, List, Tuple
 
-from similarity import keys, get_top_n
+from similarity import keys, get_top_n, exact_nearest_neighbors
 from rand_proj_similarity import train as train_rand_proj, create_projections
 from hamming import hamming_sim
 from time import perf_counter
@@ -240,6 +240,9 @@ class LshSimilarity:
                      vectors: npt.NDArray[np.float64]) \
             -> npt.NDArray[np.int64]:
 
+        nn = exact_nearest_neighbors(vectors[0], vectors, 10)
+        print(f"EXC {nn}")
+
         if self.project_on_train:
             start = perf_counter()
             print("Training Projections")
@@ -261,29 +264,37 @@ class LshSimilarity:
                                      size=(len(vectors),
                                            self.hash_len))
 
+    def log_nn(self, vectors, key, n, start):
+        top_n_lsh = lsh_nearest_neighbors(self.hashes, key, n=1000)
+        top_n_nn = vectors.nearest_neighbors(key)
+        recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
+        print(f"RECALL@{n} - {recall}")
+        print(f"  PERF   - {perf_counter() - start}")
+        print(f"   LSH - {top_n_lsh}")
+        print(f"    GT - {top_n_nn}")
+
     def train(self,
               vectors,
               rounds,
-              eval_at,
               train_keys=[0],
-              log_every=100,
+              log_every=10,
               n=10):
-        last_recall = 0.0
-        n = eval_at
-        self.hashes = self._init_hashes(vectors)
+
         start = perf_counter()
+        self.hashes = self._init_hashes(vectors)
         rounds_took = 0
-        completes = [False] * len(train_keys)
+        completes = {key: False for key in train_keys}
+        dbg_vectors = vectors
         vectors = ExactVectors(vectors, n=n, train_keys=train_keys)
+        self.log_nn(vectors, train_keys[0], n, start)
         for i in range(rounds):
+
             key = train_keys[i % len(train_keys)]
-            if np.array(completes).all():
+            if np.array(list(completes.values())).all():
                 break
 
             if i % log_every == 0:
-                print("---")
                 print(f"{i} - {key}")
-                print(lsh_nearest_neighbors(self.hashes, key, n=n))
 
             key_dotted = vectors.dot_prod_top(key)
             lsh_floor = vectors.lsh_floor(key)
@@ -294,15 +305,7 @@ class LshSimilarity:
                                               learn_rate=0.1)
 
             if i % log_every == 0:
-                top_n_lsh = lsh_nearest_neighbors(self.hashes, key, n=n)
-                top_n_nn = vectors.nearest_neighbors(key)
-                recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
-                delta_recall = recall - last_recall
-                print(f"RECALL@{eval_at} - {recall}, {delta_recall}")
-                print(f"  PERF   - {perf_counter() - start}")
-                print(lsh_nearest_neighbors(self.hashes, key, n=10))
-                last_recall = recall
-                print("---")
+                self.log_nn(vectors, key, n, start)
             completes[key] = complete
 
             rounds_took = i
@@ -312,10 +315,10 @@ class LshSimilarity:
             top_n_lsh = lsh_nearest_neighbors(self.hashes, key, n=n)
             top_n_nn = vectors.nearest_neighbors(key)
             recall = len(set(keys(top_n_nn)) & set(keys(top_n_lsh))) / n
-            print(f"RECALL@{eval_at} - {recall}")
+            print(f"RECALL@{n} - {recall}")
             recalls.append(recall)
             exact = [(idx, (score + 1) / 2) for idx, score in top_n_nn]
-            print(f" LS {lsh_nearest_neighbors(self.hashes, key, n=10)}")
+            print(f"LSH {lsh_nearest_neighbors(self.hashes, key, n=10)}")
             print(f" GT {exact}")
         print(f"  PERF   - {perf_counter() - start}")
         return self.hashes, recalls, rounds_took + 1

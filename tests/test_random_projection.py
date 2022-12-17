@@ -23,6 +23,15 @@ def assert_projection_bisects(projection, vect1, vect2):
         assert False, "Both cant be 0"
 
 
+def test_projection_between_has_negatives():
+    np.random.seed(0)
+    vect1 = random_vector(sign=1)
+    vect2 = random_vector(sign=1)
+    projection = projection_between(vect1, vect2)
+    negs = projection[projection < 0]
+    assert len(negs) > 400    # seed dependent
+
+
 def test_projection_random_positive():
     for i in range(0, 100):
         vect1 = random_vector(sign=1)

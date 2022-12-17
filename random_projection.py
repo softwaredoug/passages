@@ -79,7 +79,7 @@ def projection_between(vect1: np.ndarray,
     # whose sign flips depending on whether vectn[dim] is
     # positive or negative
     if np.sign(vect1[dim]) == np.sign(vect2[dim]):
-        projection = np.random.random_sample(size=vect1.shape)
+        projection = np.random.random_sample(size=vect1.shape) - 0.5
         projection /= np.linalg.norm(projection)
 
         dot1 = np.dot(all_but(projection, dim),
@@ -98,5 +98,12 @@ def projection_between(vect1: np.ndarray,
         projection = np.zeros(vect1.shape)
         projection[dim] = np.sign(vect1[dim])
 
+    projection /= np.linalg.norm(projection)
+    return projection
+
+
+def random_projection(num_dims: int):
+    projection = np.random.random_sample(size=num_dims)
+    projection -= 0.5
     projection /= np.linalg.norm(projection)
     return projection

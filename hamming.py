@@ -81,13 +81,15 @@ def hamming_sim_naive(hashes, comp_keys, key):
 
 def hamming_sim_xor(hashes, comp_keys, key):
     # In place to prevent copies, not thread safe
-    hashes[comp_keys] ^= hashes[key]
+    query = hashes[key].copy()
+    hashes[comp_keys] ^= query
 
     # counting bits is the slowest part of this code
     num_shared_bits = bit_count64(~hashes[comp_keys])
 
     # Inverse xor
-    hashes[comp_keys] ^= hashes[key]
+    hashes[comp_keys] ^= query
+    assert (hashes[key] == query).all()
 
     xor_sim = np.sum(num_shared_bits / (64 * num_shared_bits.shape[1]),
                      axis=1)

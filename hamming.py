@@ -96,4 +96,17 @@ def hamming_sim_xor(hashes, comp_keys, key):
     return xor_sim
 
 
+def different_bits(hash1, hash2):
+    set_if_diff = np.bitwise_xor(hash1, hash2)
+    are_different = []
+    # Not efficient
+    for idx, diff in enumerate(set_if_diff):
+        for bit_idx in range(0, 63):
+            test_mask = 2 ** bit_idx
+            if (diff & test_mask) != 0:
+                are_different.append((idx * 64) + bit_idx)
+    return are_different
+
+
+
 hamming_sim = hamming_sim_xor

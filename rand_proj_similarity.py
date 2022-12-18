@@ -51,15 +51,14 @@ def train(hashes: npt.NDArray[np.int64],
           vectors: npt.NDArray[np.float64]) -> npt.NDArray[np.int64]:
 
     for vect_idx, vect in enumerate(vectors):
-        print(vect_idx, ' - ', end='')
+        print(f"{vect_idx} - ", end="")
         for bit_idx, proj in enumerate(projections):
             dot = np.dot(vect, proj)
             if dot >= 0:
-                print('+', end='')
+                print("+", end="")
                 hashes[vect_idx] = set_bit(hashes[vect_idx], bit_idx)
             else:
-                print('-', end='')
+                print("-", end="")
                 hashes[vect_idx] = clear_bit(hashes[vect_idx], bit_idx)
-            # print(hashes[vect_idx])
         print()
     return hashes

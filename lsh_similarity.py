@@ -284,7 +284,6 @@ class LshSimilarity:
         self.hashes = self._init_hashes(vectors)
         rounds_took = 0
         completes = {key: False for key in train_keys}
-        dbg_vectors = vectors
         vectors = ExactVectors(vectors, n=n, train_keys=train_keys)
         self.log_nn(vectors, train_keys[0], n, start)
         for i in range(rounds):

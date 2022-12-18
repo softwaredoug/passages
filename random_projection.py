@@ -79,7 +79,7 @@ def projection_between(vect1: np.ndarray,
     # whose sign flips depending on whether vectn[dim] is
     # positive or negative
     if np.sign(vect1[dim]) == np.sign(vect2[dim]):
-        projection = random_projection(len(vect1))
+        projection = random_projection(vect1, vect2, 0)
 
         dot1 = np.dot(all_but(projection, dim),
                       all_but(vect1, dim))
@@ -101,7 +101,9 @@ def projection_between(vect1: np.ndarray,
     return projection
 
 
-def random_projection(num_dims: int):
+def random_projection(vect1: np.ndarray,
+                      vect2: np.ndarray,
+                      dim=0):
     """ Sample a unit vector from a sphere in N dimensions.
 
     It's actually important this is gaussian
@@ -112,6 +114,9 @@ def random_projection(num_dims: int):
         projection /= np.linalg.norm(projection)
 
     """
+    num_dims = len(vect1)
     projection = np.random.normal(size=num_dims)
     projection /= np.linalg.norm(projection)
     return projection
+
+

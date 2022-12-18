@@ -3,13 +3,33 @@ import random
 import pytest
 
 from rand_proj_similarity import train, create_projections, clear_bit, set_bit
+from random_projection import random_projection
 from utils import random_normed_matrix
 from similarity import exact_nearest_neighbors, keys
 from lsh_similarity import lsh_nearest_neighbors, to_01_scale
-from hamming import different_bits
 
 
 INT64_MAX = np.iinfo(np.int64).max
+
+
+def uniform_random_projection(vect1: np.ndarray,
+                              vect2: np.ndarray,
+                              dim=0):
+    """ Sample a unit vector from a sphere in N dimensions.
+    ... the incorrect way for testing :)
+
+    It's actually important this is gaussian
+    https://stackoverflow.com/questions/59954810/generate-random-points-on-10-dimensional-unit-sphere
+
+    IE Don't do this
+        projection = np.random.random_sample(size=num_dims) - 0.5
+        projection /= np.linalg.norm(projection)
+
+    """
+    num_dims = len(vect1)
+    projection = np.random.random_sample(size=num_dims) - 0.5
+    projection /= np.linalg.norm(projection)
+    return projection
 
 
 def assert_projection_bisects(projection, vect1, vect2):
@@ -45,7 +65,9 @@ def test_rand_projection_works_ok_in_very_low_dims():
                       shape=(rows, hash_len))
     vectors = random_normed_matrix(rows, dims=dims)
     num_projections = hash_len * 64
-    projections = create_projections(vectors, num_projections)
+    projections = create_projections(vectors,
+                                     num_projections,
+                                     proj_factory=random_projection)
     train(hashes, projections, vectors)
 
     n = 100
@@ -69,7 +91,9 @@ def test_rand_projection_works_ok_in_low_dims():
     vectors = random_normed_matrix(rows, dims=dims)
 
     num_projections = hash_len * 64
-    projections = create_projections(vectors, num_projections)
+    projections = create_projections(vectors,
+                                     num_projections,
+                                     proj_factory=random_projection)
     train(hashes, projections, vectors)
     print("Trained")
 
@@ -121,41 +145,52 @@ def test_very_similar_converges_big_hash(very_similar_vectors_2d):
 
     top_n_cos = exact_nearest_neighbors(vectors[0], vectors, n=2)
     actual_cos_sim = top_n_cos[compare_vector_idx][1]
-    num_projections = 1024
-    hash_len = 16
-    hashes = np.zeros(dtype=np.int64,
-                      shape=(2, hash_len))
-    projections = create_projections(vectors, num_projections)
-    hashes = train(hashes, projections, vectors)
-    hashes_big = hashes.copy()
-    projections_big = projections.copy()
-    top_n_lsh = lsh_nearest_neighbors(hashes, query_vector_idx, n=2)
-    compare_to = get_sim_of(top_n_lsh, top_n_cos[compare_vector_idx][0])
+    closer = 0
 
-    lsh_sim_estimate_big_hash = compare_to[1]
+    proj_to_use = random_projection
 
-    num_projections = 64
-    hash_len = 1
-    hashes = np.zeros(dtype=np.int64,
-                      shape=(2, hash_len))
-    projections = create_projections(vectors, num_projections)
-    hashes = train(hashes, projections, vectors)
-    top_n_lsh = lsh_nearest_neighbors(hashes, query_vector_idx, n=2)
-    compare_to = get_sim_of(top_n_lsh, top_n_cos[compare_vector_idx][0])
+    for i in range(0, 100):
 
-    lsh_sim_estimate_small_hash = compare_to[1]
-    delta_big = abs(actual_cos_sim - lsh_sim_estimate_small_hash),
-    delta_small = abs(actual_cos_sim - lsh_sim_estimate_big_hash),
+        num_projections = 1024
+        hash_len = 16
+        hashes = np.zeros(dtype=np.int64,
+                          shape=(2, hash_len))
+        projections = create_projections(vectors,
+                                         num_projections,
+                                         proj_factory=proj_to_use)
+        hashes = train(hashes, projections, vectors)
+        top_n_lsh = lsh_nearest_neighbors(hashes, query_vector_idx, n=2)
+        compare_to = get_sim_of(top_n_lsh, top_n_cos[compare_vector_idx][0])
 
-    print(actual_cos_sim,
-          abs(actual_cos_sim - lsh_sim_estimate_small_hash),
-          abs(actual_cos_sim - lsh_sim_estimate_big_hash))
-    # Which projections produce opposite dot products?
-    # Do they actually bisect the two?
+        lsh_sim_estimate_big_hash = compare_to[1]
 
-    projections_different = different_bits(hashes_big[0], hashes_big[1])
+        num_projections = 64
+        hash_len = 1
+        hashes = np.zeros(dtype=np.int64,
+                          shape=(2, hash_len))
+        projections = create_projections(vectors,
+                                         num_projections,
+                                         proj_factory=proj_to_use)
+        hashes = train(hashes, projections, vectors)
+        top_n_lsh = lsh_nearest_neighbors(hashes, query_vector_idx, n=2)
+        compare_to = get_sim_of(top_n_lsh, top_n_cos[compare_vector_idx][0])
 
-    assert delta_big < delta_small
+        lsh_sim_estimate_small_hash = compare_to[1]
+        delta_big = abs(actual_cos_sim - lsh_sim_estimate_small_hash),
+        delta_small = abs(actual_cos_sim - lsh_sim_estimate_big_hash),
+
+        print(actual_cos_sim,
+              abs(actual_cos_sim - lsh_sim_estimate_small_hash),
+              abs(actual_cos_sim - lsh_sim_estimate_big_hash))
+        # Which projections produce opposite dot products?
+        # Do they actually bisect the two?
+
+        # projections_different = different_bits(hashes_big[0], hashes_big[1])
+        # import pdb; pdb.set_trace()
+
+        if delta_big < delta_small:
+            closer += 1
+    print(closer, 100)
 
 
 def test_more_projections_converges_to_real_similarity():

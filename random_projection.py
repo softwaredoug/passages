@@ -118,5 +118,3 @@ def random_projection(vect1: np.ndarray,
     projection = np.random.normal(size=num_dims)
     projection /= np.linalg.norm(projection)
     return projection
-
-

@@ -77,9 +77,38 @@ def ninety_degree_vectors_2d():
 
 
 @pytest.fixture
+def ninety_degree_vectors_100d():
+    v1 = np.zeros(100)
+    v2 = np.zeros(100)
+    v1[0] = 1.0
+    v2[1] = 1.0
+
+    v1 /= np.linalg.norm(v1)
+    v2 /= np.linalg.norm(v2)
+    vectors = np.array([v1, v2])
+    return vectors
+
+
+@pytest.fixture
 def ten_degree_vectors_2d():
     v1 = np.array([1.0, 0.0])
     v2 = np.array([0.9, 0.1587])
+
+    v1 /= np.linalg.norm(v1)
+    v2 /= np.linalg.norm(v2)
+    vectors = np.array([v1, v2])
+    return vectors
+
+
+@pytest.fixture
+def ten_degree_vectors_100d():
+    v1 = np.array([1.0, 0.0])
+    v2 = np.array([0.9, 0.1587])
+    v1 = np.zeros(100)
+    v2 = np.zeros(100)
+    v1[0] = 1.0
+    v2[0] = 0.9
+    v2[1] = 0.1587
 
     v1 /= np.linalg.norm(v1)
     v2 /= np.linalg.norm(v2)
@@ -178,7 +207,22 @@ def test_90_deg_vectors_projections_50_percent_between(
     assert pytest.approx(proportion_between, 0.05) == 0.5
 
 
-def test_ten_degree_has_rect_random_projections(ten_degree_vectors_2d):
+def test_90_deg_100d_vectors_projections_50_percent_between(
+        ninety_degree_vectors_100d):
+    vectors = ninety_degree_vectors_100d
+    hash_len = 16
+    proj_results, projections = single_proj_similarity(hash_len, vectors)
+    in_between_bigger = projections[
+        ((projections[:, 0] > 0) &
+         (projections[:, 1] > 0)) |
+        ((projections[:, 0] < 0) &
+         (projections[:, 1] < 0))
+    ]
+    proportion_between = len(in_between_bigger) / len(projections)
+    assert pytest.approx(proportion_between, 0.05) == 0.5
+
+
+def test_uniform_random_projections_over_sphere(ten_degree_vectors_2d):
     vectors = ten_degree_vectors_2d
     hash_len = 16
     proj_results, projections = single_proj_similarity(hash_len, vectors)
@@ -192,12 +236,57 @@ def test_ten_degree_has_rect_random_projections(ten_degree_vectors_2d):
     assert pytest.approx(proportion_between, rel=0.1) == expected_proportion
 
 
+def test_uniform_random_projections_over_100d_sphere(ten_degree_vectors_100d):
+    vectors = ten_degree_vectors_100d
+    hash_len = 32
+    proj_results, projections = single_proj_similarity(hash_len, vectors)
+
+    degrees = np.degrees(np.arctan2(projections[:, 0], projections[:, 1]))
+    in_between = len(degrees[(degrees < -170)])
+    in_between += len(degrees[(degrees < 10) & (degrees > 0)])
+
+    proportion_between = in_between / len(projections)
+    expected_proportion = 20 / 360
+    assert pytest.approx(proportion_between, rel=0.1) == expected_proportion
+
+
+def test_random_proj_sim_matches_proportion_between(ten_degree_vectors_2d):
+    vectors = ten_degree_vectors_2d
+    hash_len = 16
+    proj_results, projections = single_proj_similarity(hash_len, vectors)
+
+    degrees = np.degrees(np.arctan2(projections[:, 0], projections[:, 1]))
+    in_between = len(degrees[(degrees < -170)])
+    in_between += len(degrees[(degrees < 10) & (degrees > 0)])
+
+    proportion_between = in_between / len(projections)
+    expected_similarity = 340 / 360
+    assert pytest.approx(proj_results[1], rel=0.05) == expected_similarity
+    assert pytest.approx(proj_results[1] + proportion_between, rel=0.05) == 1.0
+
+
+def test_random_proj_sim_matches_proportion_100d_between(ten_degree_vectors_100d):
+    vectors = ten_degree_vectors_100d
+    hash_len = 16
+    proj_results, projections = single_proj_similarity(hash_len, vectors)
+
+    degrees = np.degrees(np.arctan2(projections[:, 0], projections[:, 1]))
+    in_between = len(degrees[(degrees < -170)])
+    in_between += len(degrees[(degrees < 10) & (degrees > 0)])
+
+    proportion_between = in_between / len(projections)
+    expected_similarity = 340 / 360
+    assert pytest.approx(proj_results[1], rel=0.005) == expected_similarity
+    assert pytest.approx(proj_results[1] + proportion_between, rel=0.05) == 1.0
+
+
 def test_rectangle_projections_over_sphere_not_uniform_near_equator(
         ten_degree_vectors_2d):
     vectors = ten_degree_vectors_2d
     hash_len = 16
-    proj_results, projections = single_proj_similarity(hash_len, vectors,
-                                                       proj_to_use=rect_random_projection)
+    proj_results, projections =\
+        single_proj_similarity(hash_len, vectors,
+                               proj_to_use=rect_random_projection)
 
     degrees = np.degrees(np.arctan2(projections[:, 0], projections[:, 1]))
     in_between = len(degrees[(degrees < -170)])
@@ -231,10 +320,10 @@ def test_very_similar_converges_small_hash(very_similar_vectors_2d):
     assert pytest.approx(lsh_sim_estimate, 0.02) == actual_cos_sim
 
 
-def test_very_similar_converges_big_hash(ninety_degree_vectors_2d):
+def test_very_similar_converges_big_hash_90_2d(ninety_degree_vectors_2d):
     vectors = ninety_degree_vectors_2d
-    # np.random.seed(11)
-    # random.seed(11)
+    np.random.seed(11)
+    random.seed(11)
 
     query_vector_idx = 0
     compare_vector_idx = 1
@@ -254,7 +343,6 @@ def test_very_similar_converges_big_hash(ninety_degree_vectors_2d):
         projections = create_projections(vectors,
                                          num_projections_big,
                                          proj_factory=proj_to_use)
-        projections_bigger = projections.copy()
         hashes = train(hashes, projections, vectors)
         top_n_lsh = lsh_nearest_neighbors(hashes, query_vector_idx, n=2)
         compare_to = get_sim_of(top_n_lsh, top_n_cos[compare_vector_idx][0])
@@ -268,7 +356,6 @@ def test_very_similar_converges_big_hash(ninety_degree_vectors_2d):
         projections = create_projections(vectors,
                                          num_projections,
                                          proj_factory=proj_to_use)
-        projections_smaller = projections.copy()
         hashes = train(hashes, projections, vectors)
         top_n_lsh = lsh_nearest_neighbors(hashes, query_vector_idx, n=2)
         compare_to = get_sim_of(top_n_lsh, top_n_cos[compare_vector_idx][0])
@@ -276,34 +363,10 @@ def test_very_similar_converges_big_hash(ninety_degree_vectors_2d):
         lsh_sim_estimate_small_hash = compare_to[1]
         delta_big = abs(actual_cos_sim - lsh_sim_estimate_big_hash),
         delta_small = abs(actual_cos_sim - lsh_sim_estimate_small_hash),
-
-        print(actual_cos_sim,
-              abs(actual_cos_sim - lsh_sim_estimate_small_hash),
-              abs(actual_cos_sim - lsh_sim_estimate_big_hash))
-        # Which projections produce opposite dot products?
-        # Do they actually bisect the two?
-        in_between_bigger = projections_bigger[
-            ((projections_bigger[:, 0] > 0) &
-             (projections_bigger[:, 1] > 0)) |
-            ((projections_bigger[:, 0] < 0) &
-             (projections_bigger[:, 1] < 0))
-        ]
-        proportion_between_bigger = len(in_between_bigger) / 1024
-
-        in_between_smaller = projections_smaller[
-            ((projections_smaller[:, 0] > 0) &
-             (projections_smaller[:, 1] > 0)) |
-            ((projections_smaller[:, 0] < 0) &
-             (projections_smaller[:, 1] < 0))
-        ]
-        proportion_between_smaller = len(in_between_smaller) / 64
-
-        # projections_different = different_bits(hashes_big[0], hashes_big[1])
-
         if delta_big < delta_small:
             closer += 1
 
-        assert closer > 75
+    assert closer > 75
     print(closer, 100)
 
 
@@ -386,7 +449,7 @@ def test_rand_projection_works_on_high_dims():
     # np.random.seed(0)
     # random.seed(0)
 
-    hash_len = 128
+    hash_len = 16
     dims = 768
     rows = 1000
     hashes = np.zeros(dtype=np.int64,
@@ -403,6 +466,7 @@ def test_rand_projection_works_on_high_dims():
     top_n_lsh = lsh_nearest_neighbors(hashes, 0, n=n)
     top_n_cos = exact_nearest_neighbors(vectors[0], vectors, n=n)
     recall = len(set(keys(top_n_cos)) & set(keys(top_n_lsh))) / n
+    import pdb; pdb.set_trace()
     assert recall >= 0.3
 
 

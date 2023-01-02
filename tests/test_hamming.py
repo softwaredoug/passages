@@ -21,6 +21,8 @@ def test_xor_sim_matches_naive_hamming_sim():
 
 
 def test_xor_sim_faster_than_naive_hamming_sim():
+    np.random.seed(0)
+
     hash_len = 8
     xor_time = 0
     naive_time = 0

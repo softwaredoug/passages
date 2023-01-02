@@ -116,56 +116,6 @@ def ten_degree_vectors_100d():
     return vectors
 
 
-def test_rand_projection_works_ok_in_very_low_dims():
-    np.random.seed(0)
-    random.seed(0)
-
-    hash_len = 4
-    dims = 8
-    rows = 100000
-    hashes = np.zeros(dtype=np.int64,
-                      shape=(rows, hash_len))
-    vectors = random_normed_matrix(rows, dims=dims)
-    num_projections = hash_len * 64
-    projections = create_projections(vectors,
-                                     num_projections,
-                                     proj_factory=random_projection)
-    train(hashes, projections, vectors)
-
-    n = 100
-    print("Trained")
-    top_n_lsh = lsh_nearest_neighbors(hashes, 0, n=n)
-    top_n_cos = exact_nearest_neighbors(vectors[0], vectors, n=n)
-    recall = len(set(keys(top_n_cos)) & set(keys(top_n_lsh))) / n
-    print(recall)
-    assert recall >= 0.5
-
-
-def test_rand_projection_works_ok_in_low_dims():
-    np.random.seed(0)
-    random.seed(0)
-
-    hash_len = 4
-    dims = 16
-    rows = 100000
-    hashes = np.zeros(dtype=np.int64,
-                      shape=(rows, hash_len))
-    vectors = random_normed_matrix(rows, dims=dims)
-
-    num_projections = hash_len * 64
-    projections = create_projections(vectors,
-                                     num_projections,
-                                     proj_factory=random_projection)
-    train(hashes, projections, vectors)
-    print("Trained")
-
-    n = 100
-    top_n_lsh = lsh_nearest_neighbors(hashes, 0, n=n)
-    top_n_cos = exact_nearest_neighbors(vectors[0], vectors, n=n)
-    recall = len(set(keys(top_n_cos)) & set(keys(top_n_lsh))) / n
-    assert recall >= 0.3
-
-
 def get_sim_of(top_n_lsh, doc_id):
     DOC_ID_IDX = 0
     for idx, lsh in enumerate(top_n_lsh):
@@ -174,29 +124,37 @@ def get_sim_of(top_n_lsh, doc_id):
     raise AssertionError(f"Could not find {doc_id} in top LSH results")
 
 
-def single_proj_similarity(hash_len: int,
-                           vectors: np.ndarray,
-                           proj_to_use=random_projection):
+def rand_proj_sim(hash_len: int,
+                  vectors: np.ndarray,
+                  proj_to_use=random_projection,
+                  query_idx=0,
+                  compare_to_idx=1):
     """Run a random projection from one query vector to one other vector."""
-    query_vector_idx = 0
     num_projections = hash_len * 64
     hashes = np.zeros(dtype=np.int64,
-                      shape=(2, hash_len))
+                      shape=(vectors.shape[0], hash_len))
     projections = create_projections(vectors,
                                      num_projections,
                                      proj_factory=proj_to_use)
     hashes = train(hashes, projections, vectors)
-    top_n_lsh = lsh_nearest_neighbors(hashes, query_vector_idx,
+    top_n_lsh = lsh_nearest_neighbors(hashes, query_idx,
                                       n=vectors.shape[0])
-    compare_to = get_sim_of(top_n_lsh, 1)
+    compare_to = get_sim_of(top_n_lsh, compare_to_idx)
     return compare_to, projections
+
+
+def set_seed(seed: int):
+    np.random.seed(seed)
+    random.seed(seed)
 
 
 def test_90_deg_vectors_projections_50_percent_between(
         ninety_degree_vectors_2d):
+    set_seed(11)
+
     vectors = ninety_degree_vectors_2d
     hash_len = 16
-    proj_results, projections = single_proj_similarity(hash_len, vectors)
+    proj_results, projections = rand_proj_sim(hash_len, vectors)
     in_between_bigger = projections[
         ((projections[:, 0] > 0) &
          (projections[:, 1] > 0)) |
@@ -209,9 +167,11 @@ def test_90_deg_vectors_projections_50_percent_between(
 
 def test_90_deg_100d_vectors_projections_50_percent_between(
         ninety_degree_vectors_100d):
+    set_seed(0)
+
     vectors = ninety_degree_vectors_100d
     hash_len = 16
-    proj_results, projections = single_proj_similarity(hash_len, vectors)
+    proj_results, projections = rand_proj_sim(hash_len, vectors)
     in_between_bigger = projections[
         ((projections[:, 0] > 0) &
          (projections[:, 1] > 0)) |
@@ -223,9 +183,11 @@ def test_90_deg_100d_vectors_projections_50_percent_between(
 
 
 def test_uniform_random_projections_over_sphere(ten_degree_vectors_2d):
+    set_seed(11)
+
     vectors = ten_degree_vectors_2d
     hash_len = 16
-    proj_results, projections = single_proj_similarity(hash_len, vectors)
+    proj_results, projections = rand_proj_sim(hash_len, vectors)
 
     degrees = np.degrees(np.arctan2(projections[:, 0], projections[:, 1]))
     in_between = len(degrees[(degrees < -170)])
@@ -237,9 +199,11 @@ def test_uniform_random_projections_over_sphere(ten_degree_vectors_2d):
 
 
 def test_uniform_random_projections_over_100d_sphere(ten_degree_vectors_100d):
+    set_seed(11)
+
     vectors = ten_degree_vectors_100d
     hash_len = 32
-    proj_results, projections = single_proj_similarity(hash_len, vectors)
+    proj_results, projections = rand_proj_sim(hash_len, vectors)
 
     degrees = np.degrees(np.arctan2(projections[:, 0], projections[:, 1]))
     in_between = len(degrees[(degrees < -170)])
@@ -251,9 +215,11 @@ def test_uniform_random_projections_over_100d_sphere(ten_degree_vectors_100d):
 
 
 def test_random_proj_sim_matches_proportion_between(ten_degree_vectors_2d):
+    set_seed(11)
+
     vectors = ten_degree_vectors_2d
     hash_len = 16
-    proj_results, projections = single_proj_similarity(hash_len, vectors)
+    proj_results, projections = rand_proj_sim(hash_len, vectors)
 
     degrees = np.degrees(np.arctan2(projections[:, 0], projections[:, 1]))
     in_between = len(degrees[(degrees < -170)])
@@ -265,10 +231,13 @@ def test_random_proj_sim_matches_proportion_between(ten_degree_vectors_2d):
     assert pytest.approx(proj_results[1] + proportion_between, rel=0.05) == 1.0
 
 
-def test_random_proj_sim_matches_proportion_100d_between(ten_degree_vectors_100d):
+def test_random_proj_sim_matches_proportion_100d_between(
+        ten_degree_vectors_100d):
+    set_seed(0)
+
     vectors = ten_degree_vectors_100d
     hash_len = 16
-    proj_results, projections = single_proj_similarity(hash_len, vectors)
+    proj_results, projections = rand_proj_sim(hash_len, vectors)
 
     degrees = np.degrees(np.arctan2(projections[:, 0], projections[:, 1]))
     in_between = len(degrees[(degrees < -170)])
@@ -282,11 +251,12 @@ def test_random_proj_sim_matches_proportion_100d_between(ten_degree_vectors_100d
 
 def test_rectangle_projections_over_sphere_not_uniform_near_equator(
         ten_degree_vectors_2d):
+    set_seed(0)
     vectors = ten_degree_vectors_2d
     hash_len = 16
     proj_results, projections =\
-        single_proj_similarity(hash_len, vectors,
-                               proj_to_use=rect_random_projection)
+        rand_proj_sim(hash_len, vectors,
+                      proj_to_use=rect_random_projection)
 
     degrees = np.degrees(np.arctan2(projections[:, 0], projections[:, 1]))
     in_between = len(degrees[(degrees < -170)])
@@ -298,9 +268,9 @@ def test_rectangle_projections_over_sphere_not_uniform_near_equator(
 
 
 def test_very_similar_converges_small_hash(very_similar_vectors_2d):
+    set_seed(0)
+
     vectors = very_similar_vectors_2d
-    np.random.seed(11)
-    random.seed(11)
     query_vector_idx = 0
     compare_vector_idx = 1
 
@@ -320,10 +290,10 @@ def test_very_similar_converges_small_hash(very_similar_vectors_2d):
     assert pytest.approx(lsh_sim_estimate, 0.02) == actual_cos_sim
 
 
-def test_very_similar_converges_big_hash_90_2d(ninety_degree_vectors_2d):
+def test_increasing_hashes_increases_accuracy_2d(ninety_degree_vectors_2d):
+    set_seed(11)
+
     vectors = ninety_degree_vectors_2d
-    np.random.seed(11)
-    random.seed(11)
 
     query_vector_idx = 0
     compare_vector_idx = 1
@@ -371,8 +341,7 @@ def test_very_similar_converges_big_hash_90_2d(ninety_degree_vectors_2d):
 
 
 def test_more_projections_converges_to_real_similarity():
-    # np.random.seed(11)
-    # random.seed(11)
+    set_seed(11)
 
     hash_len = 128
     dims = 10
@@ -408,65 +377,42 @@ def test_more_projections_converges_to_real_similarity():
         # rand_proj_delta_last = delta
 
 
-def test_lsh_sim_converges_to_cos_similarity():
+def test_rand_projection_gets_exact_order_on_very_similar():
+    set_seed(11)
 
-    # np.random.seed(11)
-    # random.seed(11)
-
-    hash_len = 128
-    dims = 10
-    rows = 1000
-    n = 1000
-
-    vectors = random_normed_matrix(rows, dims=dims)
-    top_n_cos = exact_nearest_neighbors(vectors[0], vectors, n=n)
-    compare_sim_cos = top_n_cos[1]
-    compare_sim_cos = (compare_sim_cos[0], to_01_scale(compare_sim_cos[1]))
-    print(compare_sim_cos)
-    # rand_proj_delta_last = 1.0
-    for hash_len in range(1, 16):
-        num_projections = hash_len * 64
-
-        hashes = np.zeros(dtype=np.int64,
-                          shape=(rows, hash_len))
-        projections = create_projections(vectors, num_projections)
-        hashes = train(hashes, projections, vectors)
-
-        # Cos and LSH sim of most similar should converge
-        top_n_lsh = lsh_nearest_neighbors(hashes, 0, n=n)
-        compare_rand_proj = None
-        DOC_ID = 0
-        for i in range(0, n):
-            if top_n_lsh[i][DOC_ID] == compare_sim_cos[DOC_ID]:
-                compare_rand_proj = top_n_lsh[i]
-                break
-        # delta = abs(compare_rand_proj[1] - compare_sim_cos[1])
-        # assert delta < rand_proj_delta_last
-        print(compare_sim_cos, compare_rand_proj)
-
-
-def test_rand_projection_works_on_high_dims():
-    # np.random.seed(0)
-    # random.seed(0)
-
-    hash_len = 16
+    hash_len = 100
     dims = 768
-    rows = 1000
+    rows = 5000
     hashes = np.zeros(dtype=np.int64,
                       shape=(rows, hash_len))
     vectors = random_normed_matrix(rows, dims=dims)
 
+    # Force a vectors close to query
+    query_idx = 0
+    close_idx = 1
+    vectors[close_idx] = vectors[query_idx].copy()
+    vectors[close_idx][0] += 0.1
+    vectors[close_idx] /= np.linalg.norm(vectors[close_idx])
+
+    # Force a vectors close to query
+    query_idx = 0
+    next_close_idx = 2
+    vectors[next_close_idx] = vectors[query_idx].copy()
+    vectors[next_close_idx][0] += 0.1
+    vectors[next_close_idx][1] -= 0.1
+    vectors[next_close_idx] /= np.linalg.norm(vectors[next_close_idx])
+
     num_projections = hash_len * 64
-    print(num_projections)
     projections = create_projections(vectors, num_projections)
     train(hashes, projections, vectors)
     print("Trained")
 
-    n = 100
-    top_n_lsh = lsh_nearest_neighbors(hashes, 0, n=n)
-    top_n_cos = exact_nearest_neighbors(vectors[0], vectors, n=n)
+    n = 10
+    top_n_lsh = lsh_nearest_neighbors(hashes, query_idx, n=n)
+    top_n_cos = exact_nearest_neighbors(vectors[query_idx], vectors, n=n)
+    assert top_n_lsh[1][0] == 1
+    assert top_n_lsh[2][0] == 2
     recall = len(set(keys(top_n_cos)) & set(keys(top_n_lsh))) / n
-    import pdb; pdb.set_trace()
     assert recall >= 0.3
 
 

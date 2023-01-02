@@ -48,6 +48,9 @@ def train(hashes: npt.NDArray[np.int64],
 
     for vect_idx, vect in enumerate(vectors):
         # print(f"{vect_idx} - ", end="")
+
+        if vect_idx % 1000 == 0:
+            print(vect_idx)
         for bit_idx, proj in enumerate(projections):
             dot = np.dot(vect, proj)
             if dot >= 0:

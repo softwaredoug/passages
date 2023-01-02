@@ -1,7 +1,6 @@
 from typing import Union
 import numpy as np
 import pandas as pd
-from time import perf_counter
 
 
 def keys(top):
